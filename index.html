@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EWI — Engineered With Ife™</title>
+<style>
+  :root{
+    --ink:#1d1d1f; --sub:#6e6e73; --hair:#d2d2d7; --panel:#f5f5f7;
+    --blue:#0071e3; --purple:#8a3ffc; --teal:#00a8a8; --green:#008009;
+    --orange:#f56300; --red:#e30000; --magenta:#ff2d78; --amber:#e87d0d; --cyan:#00b3ab; --indigo:#4c8dff;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:linear-gradient(180deg,#f7f7f7 0%,#ffffff 100%);color:var(--ink);
+       font:16px/1.6 -apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Helvetica,Arial,sans-serif;
+       -webkit-font-smoothing:antialiased}
+  nav{position:sticky;top:0;z-index:9;background:rgba(255,255,255,.78);
+      backdrop-filter:saturate(180%) blur(20px);border-bottom:1px solid rgba(210,210,215,.72)}
+  nav .bar{max-width:1080px;margin:0 auto;display:flex;align-items:center;gap:26px;
+      padding:13px 22px;font-size:14px}
+  nav .brand{font-weight:700;letter-spacing:-.02em;font-size:16px}
+  nav a{color:var(--sub);text-decoration:none}
+  nav a:hover{color:var(--ink)}
+  .hero{max-width:950px;margin:0 auto;text-align:center;padding:76px 22px 28px}
+  .hero .tm{font-size:13px;color:var(--sub);letter-spacing:.2em;text-transform:uppercase;
+      margin-bottom:14px;opacity:.95}
+  .hero h1{font-size:clamp(40px,6.4vw,66px);font-weight:700;letter-spacing:-.03em;
+      line-height:1.04;margin:0 0 16px;color:#111}
+  .hero h1 .g1{background:linear-gradient(90deg,#1d1d1f 0%,#6e6e73 100%);
+      -webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero h1 .g2{background:linear-gradient(90deg,#4c8dff 0%,#1d1d1f 100%);
+      -webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero p{color:var(--sub);font-size:18px;line-height:1.7;max-width:720px;margin:0 auto}
+  .hero .ife{margin-top:14px;font-size:14px}
+  .hero .ife b{color:var(--red)}
+  .grid{max-width:1080px;margin:40px auto 0;padding:0 22px 40px;display:grid;
+      grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px}
+  .tile{background:rgba(255,255,255,.96);border:1px solid rgba(210,210,215,.92);border-radius:24px;padding:28px 28px 24px;display:flex;
+      flex-direction:column;min-height:240px;box-shadow:0 10px 28px rgba(17,17,17,.04);transition:transform .18s ease, box-shadow .18s ease}
+  .tile:hover{transform:translateY(-2px);box-shadow:0 16px 36px rgba(17,17,17,.08)}
+  .tile .k{font-size:11.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;
+      margin-bottom:8px}
+  .tile h2{font-size:24px;font-weight:700;letter-spacing:-.02em;margin:0 0 8px}
+  .tile p{color:var(--sub);font-size:15px;margin:0 0 18px;flex:1}
+  .tile .go{display:flex;gap:14px;flex-wrap:wrap;font-size:15px}
+  .tile .go a{color:var(--ink);text-decoration:none;font-weight:600}
+  .tile .go a:hover{color:var(--blue)}
+  .tile.blue .k{color:var(--blue)} .tile.purple .k{color:var(--purple)}
+  .tile.orange .k{color:var(--orange)} .tile.teal .k{color:var(--teal)}
+  .tile.green .k{color:var(--green)} .tile.red .k{color:var(--red)}
+  .tile.magenta .k{color:var(--magenta)} .tile.amber .k{color:var(--amber)}
+  .tile.cyan .k{color:var(--cyan)} .tile.indigo .k{color:var(--indigo)}
+  section.band{background:linear-gradient(180deg,#fafafa 0%,#ffffff 100%);margin-top:44px;padding:56px 22px 64px}
+  section.band .inner{max-width:900px;margin:0 auto;text-align:center}
+  section.band h2{font-size:clamp(28px,4vw,40px);font-weight:700;letter-spacing:-.025em;margin:0 0 12px}
+  section.band p{color:var(--sub);font-size:17px;max-width:680px;margin:0 auto}
+  .platforms{display:flex;justify-content:center;gap:12px;margin-top:24px;flex-wrap:wrap;
+      color:var(--sub);font-size:14px}
+  .platforms span{background:rgba(255,255,255,.7);border:1px solid var(--hair);padding:10px 14px;border-radius:999px}
+  .platforms b{color:var(--ink);display:block;font-size:15px;margin-bottom:2px}
+  footer{padding:40px 22px 50px;text-align:center;color:var(--sub);font-size:13px}
+  footer .love{color:var(--red)}
+</style>
+</head>
+<body>
+<nav><div class="bar">
+  <span class="brand">EWI</span>
+  <a href="#products">Products</a>
+</div></nav>
+
+<div class="hero">
+  <div class="tm">Engineered With Ife™</div>
+  <h1><span class="g1">Engineered</span> with <span class="g2">Love.</span><br>Built to last.</h1>
+  <p>EWI is a family of carefully considered tools built for focus, clarity, and longevity.
+     Each product is designed to feel calm, dependable, and useful from the first click.</p>
+  <p class="ife"><b>“Ife”</b> [Yoruba] = <b>“Love”</b> [English]</p>
+</div>
+
+<div class="grid" id="products">
+  <div class="tile blue" data-href="browser-cloud/">
+    <div class="k">Infrastructure</div>
+    <h2>Browser Cloud</h2>
+    <p>Headless browser sessions as a clean API — launch, watch, and collect screenshots,
+       rendered DOM, and extracted structure. Ethics guardrails built in.</p>
+    <div class="go"><a href="browser-cloud/">Open the app →</a></div>
+  </div>
+  <div class="tile purple" data-href="flow-dictation/">
+    <div class="k">Voice</div>
+    <h2>Flow Dictation</h2>
+    <p>Don't type it — say it. Streaming speech-to-text with a real formatting layer:
+       spoken punctuation, tone rewrite, and a personal dictionary. On-device capture.</p>
+    <div class="go"><a href="flow-dictation/">Open the app →</a></div>
+  </div>
+  <div class="tile orange" data-href="clipforge/">
+    <div class="k">Video</div>
+    <h2>ClipForge</h2>
+    <p>Long-form in, short-form gold out. Up to 3 hours or a YouTube link — highlights,
+       transcript, 9:16 reframe, burned captions, honest ETA.</p>
+    <div class="go"><a href="clipforge/">Open the app →</a></div>
+  </div>
+  <div class="tile magenta" data-href="reel/">
+    <div class="k">Media</div>
+    <h2>EWI Reel</h2>
+    <p>Bring any public post home. Paste a link from Instagram, Threads, TikTok, X, or YouTube
+       and Reel returns the best MP4, an MP3, or a clean transcript — public-only, DRM honored,
+       entirely on your Mac.</p>
+    <div class="go"><a href="reel/">Open the app →</a></div>
+  </div>
+  <div class="tile purple" data-href="grid/">
+    <div class="k">Media</div>
+    <h2>EWI Grid</h2>
+    <p>Collage any mix of photos and videos — square, story, wallpaper and more. Grid, mosaic,
+       and radial ✳ rosette layouts; pan, zoom, and reframe each tile. Download a crisp image,
+       or — when any clip is a video — a video the length of your longest clip. All on your Mac.</p>
+    <div class="go"><a href="grid/">Open the app →</a></div>
+  </div>
+  <div class="tile blue" data-href="cosmos/">
+    <div class="k">Simulation</div>
+    <h2>EWI Cosmos</h2>
+    <p>A physics-based space simulator — real Newtonian gravity, collisions and merging,
+       stellar climate and habitable zones. Load the Solar System, a binary star, Saturn's
+       rings, or a galaxy of 620 suns, then launch worlds of your own. All on your Mac.</p>
+    <div class="go"><a href="cosmos/">Open the app →</a></div>
+  </div>
+  <div class="tile orange" data-href="matrix/">
+    <div class="k">Computation</div>
+    <h2>EWI Matrix</h2>
+    <p>A MATLAB-style numerical computing workbench — a real matrix interpreter with
+       linear algebra, statistics, and elementwise math, plus 2-D and 3-D plotting.
+       Solve <b>A·x = b</b>, fit data, render <b>surf(peaks)</b>. Private and offline.</p>
+    <div class="go"><a href="matrix/">Open the app →</a></div>
+  </div>
+  <div class="tile amber" data-href="forge/">
+    <div class="k">Creation</div>
+    <h2>EWI Forge</h2>
+    <p>A Blender-style 3-D studio with its own software renderer — build with primitives,
+       <b>sculpt</b> and subdivide, shade with materials and a sun light, then
+       <b>render</b> or export <b>OBJ</b> for a game engine or 3-D printer. All on your Mac.</p>
+    <div class="go"><a href="forge/">Open the app →</a></div>
+  </div>
+  <div class="tile cyan" data-href="cut/">
+    <div class="k">Editing</div>
+    <h2>EWI Cut</h2>
+    <p>A CapCut-style timeline editor — layer photos, video, text and audio on
+       multiple tracks, <b>trim</b>, <b>split</b> and add <b>fades</b>, filters,
+       Ken Burns and animated titles, then <b>export</b> a high-quality video. All on your Mac.</p>
+    <div class="go"><a href="cut/">Open the app →</a></div>
+  </div>
+  <div class="tile indigo" data-href="stat/">
+    <div class="k">Analysis</div>
+    <h2>EWI Stat</h2>
+    <p>An IBM SPSS-style statistics workbench — a Data/Variable View spreadsheet with
+       <b>descriptives</b>, <b>t-tests</b>, <b>ANOVA</b>, <b>correlation</b>, <b>regression</b> and
+       <b>crosstabs</b> (exact p-values, effect sizes, APA write-ups) plus histograms,
+       boxplots and scatterplots. All on your Mac.</p>
+    <div class="go"><a href="stat/">Open the app →</a></div>
+  </div>
+  <div class="tile teal" data-href="trading/">
+    <div class="k">Finance</div>
+    <h2>EWI Trading</h2>
+    <p>The Trading Command Center — 569-ticker movers, multi-source market news,
+       and a daily investment plan you can actually execute.</p>
+    <div class="go"><a href="trading/">Open the app →</a></div>
+  </div>
+  <div class="tile green" data-href="https://apps.apple.com/us/app/navlinq/id6769218514" data-target="_blank">
+    <div class="k">Social · shipped</div>
+    <h2>NAVLINQ</h2>
+    <p>Location-first social — posts, stories, chat, and collaboration.
+       Live on the App Store today.</p>
+    <div class="go"><a href="https://apps.apple.com/us/app/navlinq/id6769218514" target="_blank" rel="noopener">View on the App Store →</a></div>
+  </div>
+  <div class="tile red" id="mind" data-href="mind/">
+    <div class="k">Intelligence</div>
+    <h2>EWI Mind</h2>
+    <p>The house model. Trained from scratch — no external AI APIs — on the code, dossiers,
+       and engineering corpus of every EWI product. It learns from every conversation
+       and can ingest new research on command.</p>
+    <div class="go"><a href="mind/">Open the app →</a></div>
+  </div>
+  <div class="tile green" id="lens" data-href="lens/">
+    <div class="k">Vision</div>
+    <h2>EWI Lens</h2>
+    <p>See what you see. Drop a PDF, PNG, JPEG, or video and Lens describes it — or share a
+       slice of your screen and it reads it live, answering math, technical, behavioral,
+       and coding questions in real time. Everything stays on your Mac.</p>
+    <div class="go"><a href="lens/">Open the app →</a></div>
+  </div>
+</div>
+
+<section class="band" id="platforms">
+  <div class="inner">
+    <h2>One family. Every screen.</h2>
+    <p>Each product ships as a website today, with native SwiftUI apps for iPhone and Mac
+       in the ewi-suite/apple-apps starter kits — built on Apple's own frameworks
+       (SFSpeechRecognizer, AVFoundation, WebKit), zero third-party dependencies.</p>
+    <div class="platforms">
+      <span><b>Web</b>localhost, today</span>
+      <span><b>iOS</b>SwiftUI · App Store-ready pattern</span>
+      <span><b>macOS</b>SwiftUI · one codebase</span>
+    </div>
+  </div>
+</section>
+
+<footer>
+  EWI — Engineered With Ife™ · “Ife” [Yoruba] = <span class="love">“Love”</span> [English]<br>
+  Browser Cloud · Flow Dictation · ClipForge · EWI Reel · EWI Grid · EWI Cosmos · EWI Matrix · EWI Forge · EWI Cut · EWI Stat · EWI Trading · NAVLINQ · EWI Mind · EWI Lens
+</footer>
+<script src="ewi-switcher.js" defer></script>
+<script>
+  // Make each product card fully clickable — not just the link inside it.
+  document.querySelectorAll('.tile[data-href]').forEach(function(t){
+    t.style.cursor='pointer';
+    t.addEventListener('click',function(e){
+      if(e.target.closest('a'))return;            // let the inner link behave normally
+      var href=t.getAttribute('data-href');
+      if(t.getAttribute('data-target')==='_blank')window.open(href,'_blank','noopener');
+      else location.href=href;
+    });
+  });
+</script>
+</body>
+</html>
