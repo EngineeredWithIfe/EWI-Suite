@@ -1,7 +1,8 @@
-# Local, proprietary engine bundle — served for real downloads on localhost /
-# trusted distribution, but NEVER published to the public repo (protects source).
-downloads/
+# The EWI Suite bundle IS published so GitHub Pages can serve real downloads to
+# every visitor. Ignore stray zips elsewhere, but keep the published bundle.
 *.zip
+!downloads/
+!downloads/ewi-suite.zip
 
 # OS / editor noise
 .DS_Store

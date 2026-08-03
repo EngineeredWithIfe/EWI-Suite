@@ -1,14 +1,13 @@
 /* ===========================================================================
    EWI Suite — shared "Download the app" control.
 
-   How the download resolves (IP-safe):
+   How the download resolves:
    - LOCAL_ZIP is the REAL, runnable engine bundle (downloads/ewi-suite.zip),
-     built by build-ewi-suite-bundle.sh and served next to this script. It
-     lives in a gitignored folder, so it is available on localhost / trusted
-     distribution but is NEVER pushed to the public repo.
-   - On click we HEAD-check LOCAL_ZIP: if present, we trigger a genuine file
-     download of the whole suite; if absent (e.g. the public GitHub Pages host,
-     where the private bundle isn't served) we fall back to the Releases page.
+     built by build-ewi-suite-bundle.sh and committed to the repo so GitHub
+     Pages serves it to EVERY visitor. The path is resolved relative to this
+     script, so it works from any /product/ subpath and on both localhost and
+     the public project-pages origin.
+   - On click we trigger a genuine file download of the whole suite.
    - "It's all the same files": the whole suite ships in ONE bundle, so once a
      visitor has downloaded it from ANY product, the button is hidden on every
      other product (state is shared per-origin via localStorage) and replaced
@@ -23,7 +22,6 @@
   var LOCAL_ZIP = SCRIPT_SRC
     ? new URL("downloads/ewi-suite.zip", SCRIPT_SRC).href
     : "downloads/ewi-suite.zip";
-  var RELEASE_URL = "https://github.com/EngineeredWithIfe/EWI-Suite/releases";
   var STORAGE_KEY = "ewi-suite-downloaded"; // shared across all products (same origin)
 
   function injectStyles() {
@@ -76,19 +74,9 @@
   }
 
   function triggerDownload() {
-    if (hasLocalBundle()) downloadFile(LOCAL_ZIP);
-    else window.open(RELEASE_URL, "_blank", "noopener");
-  }
-
-  // The private bundle is served only where it physically exists: on a local
-  // dev host (localhost / 127.0.0.1 / ::1 / file:). The public GitHub Pages
-  // host never carries it (gitignored), so there we point at Releases instead.
-  // This is deterministic — no network probe — which avoids dev-server HEAD/Range
-  // quirks while staying correct on the public host.
-  function hasLocalBundle() {
-    if (location.protocol === "file:") return true;
-    var h = location.hostname;
-    return h === "localhost" || h === "127.0.0.1" || h === "::1" || h === "[::1]";
+    // The bundle is committed and served on every host (localhost + public
+    // GitHub Pages), so a single relative download works everywhere.
+    downloadFile(LOCAL_ZIP);
   }
 
   function build() {
