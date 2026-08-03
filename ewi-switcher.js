@@ -15,8 +15,15 @@
       if (s[i].src && /ewi-switcher\.js(\?|$)/.test(s[i].src)) return s[i].src;
     return location.href;
   }
-  var BASE = selfSrc().replace(/[^/]*$/, "");            // strip filename -> dir
-  function u(path) { return BASE + path; }               // site-relative URL
+  var SELF = selfSrc();
+  var BASE = SELF.replace(/[?#].*$/, "").replace(/[^/]*$/, "");   // strip query + filename -> dir
+  // Standalone mode: a single engine served on its OWN localhost port (e.g. a
+  // downloaded bundle running `python3 serve.py`). Its sibling apps and the
+  // suite home don't exist on that port, so links resolve to the public site.
+  var STANDALONE = /[?&]standalone=1\b/.test(SELF);
+  var PUBLIC_HOME = "https://engineeredwithife.github.io/EWI-Suite/";
+  var LINK_BASE = STANDALONE ? PUBLIC_HOME : BASE;
+  function u(path) { return LINK_BASE + path; }          // site-relative URL
 
   var APPS = [
     { name: "EWI Home",       url: u(""),               k: "EW", c: "#1d1d1f" },
@@ -37,9 +44,10 @@
   ];
 
   var HOME_URL = u("");
-  // Home = the page whose directory equals BASE (root index).
+  // Home = the page whose directory equals BASE (root index). A standalone
+  // engine is never the home page, so it always shows the Home pill.
   var pageDir = location.href.replace(/[?#].*$/, "").replace(/[^/]*$/, "");
-  var IS_HOME = (pageDir === BASE);
+  var IS_HOME = STANDALONE ? false : (pageDir === BASE);
   var LANE = 48;
 
   var bodyBg = "", dark = false;
