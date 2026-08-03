@@ -1,0 +1,702 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>EWI Stat — statistics workbench</title>
+<meta name="description" content="An IBM SPSS-style statistics workbench: a Data View and Variable View spreadsheet, descriptives, frequencies, t-tests, one-way ANOVA, correlation, linear regression and crosstabs with exact p-values, plus histograms, boxplots and scatterplots — all on your Mac." />
+<style>
+  :root{
+    --bg:#0f1218; --panel:#161a22; --panel2:#1d2230; --grid:#11141b; --ink:#eaf0f7; --muted:#8f9bb0;
+    --line:#282f3d; --accent:#4c8dff; --accent2:#6ea8ff; --sel:#2b3d63; --focus:#ffd166;
+    --ok:#2fbf71; --warn:#f2b705; --bad:#e5484d; --chip:#212736;
+    --scale:#4c8dff; --ordinal:#b083f0; --nominal:#f0a05a;
+    --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:13px;overflow:hidden}
+  button,select,input{font-family:inherit;color:inherit}
+  button{cursor:pointer}
+  :focus-visible{outline:2px solid var(--focus);outline-offset:1px;border-radius:4px}
+  .skip{position:absolute;left:-999px;top:0;background:var(--accent);color:#04122e;padding:8px 12px;border-radius:8px;z-index:60}
+  .skip:focus{left:8px;top:8px}
+
+  header{display:flex;align-items:center;gap:11px;padding:7px 14px;border-bottom:1px solid var(--line);
+    background:linear-gradient(180deg,#141924,#0f1218);position:relative;z-index:20}
+  .brand{display:flex;align-items:center;gap:9px;font-weight:700}
+  .brand .mk{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;color:#04122e;font-weight:800;
+    background:linear-gradient(135deg,var(--accent),#2f6fe0);box-shadow:0 2px 10px rgba(76,141,255,.4)}
+  .brand small{display:block;color:var(--muted);font-weight:500;font-size:10.5px}
+  .menu{margin-left:6px;display:flex;gap:2px}
+  .menu>.m{position:relative}
+  .menu>.m>button{background:none;border:1px solid transparent;border-radius:7px;padding:6px 11px;font-weight:600;font-size:12.5px}
+  .menu>.m>button:hover,.menu>.m.open>button{background:var(--chip);border-color:var(--line)}
+  .dd{position:absolute;top:calc(100% + 4px);left:0;min-width:220px;background:var(--panel2);border:1px solid var(--line);
+    border-radius:10px;padding:5px;display:none;z-index:30;box-shadow:0 12px 34px rgba(0,0,0,.5)}
+  .menu>.m.open .dd{display:block}
+  .dd button{width:100%;text-align:left;background:none;border:none;border-radius:6px;padding:7px 10px;font-size:12.5px;position:relative}
+  .dd button:hover{background:var(--sel)}
+  .dd .sep{height:1px;background:var(--line);margin:5px 4px}
+  .dd .sub{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.6px;padding:6px 10px 3px}
+  .htools{margin-left:auto;display:flex;gap:8px}
+  .hbtn{background:var(--chip);border:1px solid var(--line);border-radius:8px;padding:6px 11px;font-size:12.5px;font-weight:600}
+  .hbtn:hover{border-color:var(--accent)}
+  .hbtn.primary{background:linear-gradient(135deg,var(--accent),#2f6fe0);border:none;color:#04122e}
+
+  .tabs{display:flex;gap:2px;padding:6px 12px 0;background:var(--panel);border-bottom:1px solid var(--line)}
+  .tab{background:none;border:1px solid transparent;border-bottom:none;border-radius:8px 8px 0 0;padding:8px 16px;font-weight:600;color:var(--muted)}
+  .tab[aria-selected="true"]{background:var(--bg);color:var(--ink);border-color:var(--line)}
+  .view{position:absolute;inset:0;top:0;overflow:auto;display:none}
+  .stage{position:relative;height:calc(100% - 84px)}
+  .view.on{display:block}
+
+  /* spreadsheet */
+  table.grid{border-collapse:collapse;font-family:var(--mono);font-size:12px;min-width:100%}
+  table.grid th,table.grid td{border:1px solid var(--line);padding:0;height:26px}
+  table.grid thead th{background:var(--panel2);color:var(--ink);position:sticky;top:0;z-index:3;padding:4px 8px;font-family:var(--sans);font-weight:700;white-space:nowrap}
+  table.grid thead th .mz{font-size:9px;color:var(--muted);font-weight:600}
+  table.grid td.rownum,table.grid th.corner{background:var(--panel2);color:var(--muted);text-align:center;position:sticky;left:0;z-index:2;min-width:44px;font-family:var(--sans)}
+  table.grid th.corner{z-index:4}
+  table.grid td input{width:100%;height:100%;min-width:88px;background:var(--grid);border:none;padding:3px 8px;font-family:var(--mono);font-size:12px;color:var(--ink)}
+  table.grid td input:focus{background:var(--sel);outline:1px solid var(--accent)}
+  table.grid td.str input{color:#ffd9a8}
+
+  /* variable view */
+  table.vv{border-collapse:collapse;font-size:12.5px;min-width:100%}
+  table.vv th,table.vv td{border:1px solid var(--line);padding:5px 8px;white-space:nowrap}
+  table.vv thead th{background:var(--panel2);position:sticky;top:0;z-index:2;font-weight:700}
+  table.vv td input,table.vv td select{background:var(--grid);border:1px solid var(--line);border-radius:5px;padding:4px 6px;font-size:12px;min-width:90px}
+  table.vv .meas{display:inline-flex;align-items:center;gap:5px}
+  .dot{width:9px;height:9px;border-radius:50%} .dot.scale{background:var(--scale)} .dot.ordinal{background:var(--ordinal)} .dot.nominal{background:var(--nominal)}
+
+  /* output */
+  #view-out{padding:18px 22px}
+  .out-empty{color:var(--muted);max-width:560px;line-height:1.6}
+  .block{background:var(--panel);border:1px solid var(--line);border-radius:12px;margin:0 0 18px;overflow:hidden}
+  .block>h3{margin:0;padding:11px 15px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:13.5px}
+  .block>h3 .tag{float:right;color:var(--muted);font-weight:500;font-size:11px}
+  .block .body{padding:13px 15px;overflow:auto}
+  table.piv{border-collapse:collapse;font-size:12px;margin:6px 0}
+  table.piv caption{text-align:left;font-weight:700;padding:2px 0 7px;font-size:12.5px}
+  table.piv th,table.piv td{border:1px solid var(--line);padding:5px 11px;text-align:right;font-family:var(--mono)}
+  table.piv th{background:var(--panel2);font-family:var(--sans);text-align:center}
+  table.piv td.lab,table.piv th.lab{text-align:left;font-family:var(--sans);background:var(--grid)}
+  table.piv tr:nth-child(even) td{background:rgba(255,255,255,.015)}
+  .sig{color:var(--ok);font-weight:700} .nsig{color:var(--muted)}
+  .note{color:var(--muted);font-size:11px;margin:6px 0 0;line-height:1.5}
+  .apa{background:var(--grid);border:1px solid var(--line);border-radius:8px;padding:9px 12px;margin-top:10px;font-size:12.5px;line-height:1.55}
+  canvas.chart{background:var(--grid);border:1px solid var(--line);border-radius:8px;max-width:100%}
+
+  /* toolbar under tabs */
+  .toolbar{display:flex;align-items:center;gap:8px;padding:6px 12px;background:var(--panel);border-bottom:1px solid var(--line)}
+  .toolbar button{background:var(--chip);border:1px solid var(--line);border-radius:7px;padding:5px 10px;font-size:12px;font-weight:600}
+  .toolbar button:hover{border-color:var(--accent)}
+  .toolbar .sp{flex:1} .toolbar .info{color:var(--muted);font-size:12px;font-family:var(--mono)}
+
+  /* modal / dialog */
+  .modal{position:fixed;inset:0;background:rgba(6,9,14,.72);display:none;place-items:center;z-index:50;padding:22px}
+  .modal.on{display:grid}
+  .dlg{background:var(--panel);border:1px solid var(--line);border-radius:14px;width:640px;max-width:100%;max-height:86vh;overflow:auto}
+  .dlg h2{margin:0;padding:16px 20px;border-bottom:1px solid var(--line);font-size:16px}
+  .dlg .dbody{padding:16px 20px}
+  .dlg .drow{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:stretch}
+  .picker{border:1px solid var(--line);border-radius:10px;background:var(--grid);min-height:150px;max-height:230px;overflow:auto;padding:5px}
+  .picker .pi{padding:6px 9px;border-radius:6px;cursor:pointer;font-size:12.5px;display:flex;align-items:center;gap:7px}
+  .picker .pi:hover{background:var(--sel)} .picker .pi.sel{background:var(--accent);color:#04122e}
+  .picker .pl{display:flex;flex-direction:column;justify-content:center;gap:6px}
+  .picker-wrap h4{margin:0 0 6px;font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted)}
+  .mv{background:var(--chip);border:1px solid var(--line);border-radius:8px;width:38px;height:32px;font-size:15px}
+  .opts{margin-top:14px;display:flex;flex-wrap:wrap;gap:8px 16px}
+  .opts label{display:flex;align-items:center;gap:6px;font-size:12.5px}
+  .opts input[type=number]{width:74px;background:var(--grid);border:1px solid var(--line);border-radius:6px;padding:4px 6px}
+  .dlg .foot{display:flex;justify-content:flex-end;gap:9px;padding:13px 20px;border-top:1px solid var(--line)}
+  .dlg .foot button{border-radius:8px;padding:8px 16px;font-weight:600;border:1px solid var(--line);background:var(--chip)}
+  .dlg .foot .run{background:linear-gradient(135deg,var(--accent),#2f6fe0);border:none;color:#04122e}
+  .dlg .x{float:right;background:var(--chip);border:1px solid var(--line);border-radius:8px;padding:5px 10px;font-size:12px;margin:-2px 0}
+
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<a class="skip" href="#stage">Skip to workbench</a>
+<header>
+  <div class="brand"><span class="mk" aria-hidden="true">Σ</span>
+    <span>EWI Stat <small>statistics workbench</small></span></div>
+  <nav class="menu" aria-label="Main menu">
+    <div class="m"><button aria-haspopup="true">Data</button>
+      <div class="dd">
+        <button data-act="import">Import CSV…</button>
+        <button data-act="paste">Paste data…</button>
+        <div class="sep"></div>
+        <div class="sub">Sample datasets</div>
+        <button data-act="sample-emp">Employee wellbeing (N=48)</button>
+        <button data-act="sample-clin">Clinical trial (N=60)</button>
+        <div class="sep"></div>
+        <button data-act="addvar">Add variable</button>
+        <button data-act="addrow">Add 5 cases</button>
+        <button data-act="clear">Clear all data</button>
+      </div></div>
+    <div class="m"><button aria-haspopup="true">Analyze</button>
+      <div class="dd">
+        <div class="sub">Descriptive statistics</div>
+        <button data-act="descriptives">Descriptives…</button>
+        <button data-act="frequencies">Frequencies…</button>
+        <button data-act="explore">Explore…</button>
+        <div class="sep"></div>
+        <div class="sub">Compare means</div>
+        <button data-act="ttest-1">One-sample T test…</button>
+        <button data-act="ttest-ind">Independent-samples T test…</button>
+        <button data-act="ttest-pair">Paired-samples T test…</button>
+        <button data-act="anova">One-way ANOVA…</button>
+        <div class="sep"></div>
+        <button data-act="correlate">Correlate (bivariate)…</button>
+        <button data-act="regression">Linear regression…</button>
+        <button data-act="crosstabs">Crosstabs (χ²)…</button>
+      </div></div>
+    <div class="m"><button aria-haspopup="true">Graphs</button>
+      <div class="dd">
+        <button data-act="g-hist">Histogram…</button>
+        <button data-act="g-box">Boxplot…</button>
+        <button data-act="g-bar">Bar chart…</button>
+        <button data-act="g-scatter">Scatterplot…</button>
+      </div></div>
+  </nav>
+  <div class="htools">
+    <button class="hbtn" id="btn-guide">Guide</button>
+    <button class="hbtn" id="btn-export">Export output</button>
+    <input type="file" id="file" accept=".csv,text/csv" hidden>
+  </div>
+</header>
+
+<div class="tabs" role="tablist">
+  <button class="tab" id="tab-data" role="tab" aria-selected="true" aria-controls="view-data">Data View</button>
+  <button class="tab" id="tab-var" role="tab" aria-selected="false" aria-controls="view-var">Variable View</button>
+  <button class="tab" id="tab-out" role="tab" aria-selected="false" aria-controls="view-out">Output</button>
+</div>
+<div class="toolbar">
+  <button data-act="addrow">＋ Cases</button>
+  <button data-act="addvar">＋ Variable</button>
+  <span class="sp"></span>
+  <span class="info" id="dims">0 cases · 0 variables</span>
+</div>
+
+<div class="stage" id="stage">
+  <section class="view on" id="view-data" role="tabpanel" aria-labelledby="tab-data"></section>
+  <section class="view" id="view-var" role="tabpanel" aria-labelledby="tab-var"></section>
+  <section class="view" id="view-out" role="tabpanel" aria-labelledby="tab-out">
+    <div class="out-empty" id="out-empty">
+      <p style="font-size:15px;color:var(--ink);font-weight:600">Output viewer</p>
+      <p>Run an analysis from the <b>Analyze</b> or <b>Graphs</b> menu and the results — pivot tables with
+      exact p-values, effect sizes and APA-style write-ups, plus charts — appear here. Load a sample
+      dataset from the <b>Data</b> menu to begin.</p>
+    </div>
+    <div id="out"></div>
+  </section>
+</div>
+
+<!-- generic analysis dialog -->
+<div class="modal" id="dlg" role="dialog" aria-modal="true" aria-labelledby="dlg-t">
+  <div class="dlg">
+    <h2 id="dlg-t">Analysis <button class="x" data-close>Close</button></h2>
+    <div class="dbody" id="dlg-body"></div>
+    <div class="foot"><button data-close>Cancel</button><button class="run" id="dlg-run">OK</button></div>
+  </div>
+</div>
+<!-- guide -->
+<div class="modal" id="guide" role="dialog" aria-modal="true" aria-labelledby="g-t">
+  <div class="dlg">
+    <h2 id="g-t">EWI Stat — guide <button class="x" data-close>Close</button></h2>
+    <div class="dbody" style="line-height:1.6;color:var(--muted)">
+      <p><b style="color:var(--ink)">EWI Stat</b> is an SPSS-style statistics workbench. Everything runs on your Mac.</p>
+      <h4 style="color:var(--accent2);margin:14px 0 4px">Enter data</h4>
+      <p>Type into <b>Data View</b> (rows = cases, columns = variables) or load a <b>sample dataset</b> /
+         <b>Import CSV</b> from the Data menu. Define types and measurement level in <b>Variable View</b>.</p>
+      <h4 style="color:var(--accent2);margin:14px 0 4px">Analyze</h4>
+      <p>Descriptives, Frequencies, one-sample / independent / paired <b>T tests</b>, one-way <b>ANOVA</b>,
+         Pearson &amp; Spearman <b>correlation</b>, multiple linear <b>regression</b>, and <b>crosstabs</b> with a
+         χ² test — each producing SPSS-style tables with exact p-values, effect sizes and a written summary.</p>
+      <h4 style="color:var(--accent2);margin:14px 0 4px">Graphs &amp; export</h4>
+      <p>Histograms, boxplots, bar charts and scatterplots render to the Output viewer. <b>Export output</b>
+         saves a self-contained HTML report of everything you have run.</p>
+    </div>
+    <div class="foot"><button data-close class="run">Got it</button></div>
+  </div>
+</div>
+
+<script src="../ewi-switcher.js"></script>
+<script>
+"use strict";
+/* ===========================================================================
+   EWI Stat — an SPSS-style statistics workbench.
+   Sections: (1) statlib — special functions & distribution tails (exact
+   p-values via incomplete beta / gamma); (2) descriptives & analyses;
+   (3) data model + spreadsheet UI; (4) analysis dialogs + output rendering;
+   (5) charts. Zero dependencies. window.__stat exposes the engine for tests.
+   =========================================================================== */
+
+/* =================== (1) statlib =================== */
+var LG=[0.99999999999980993,676.5203681218851,-1259.1392167224028,771.32342877765313,
+        -176.61502916214059,12.507343278686905,-0.13857109526572012,9.9843695780195716e-6,1.5056327351493116e-7];
+function lgamma(z){
+  if(z<0.5) return Math.log(Math.PI/Math.sin(Math.PI*z))-lgamma(1-z);
+  z-=1; var x=LG[0]; for(var i=1;i<9;i++) x+=LG[i]/(z+i); var t=z+7.5;
+  return 0.5*Math.log(2*Math.PI)+(z+0.5)*Math.log(t)-t+Math.log(x);
+}
+function betacf(a,b,x){
+  var MAXIT=300,EPS=3e-14,FPMIN=1e-300, qab=a+b,qap=a+1,qam=a-1, c=1, d=1-qab*x/qap;
+  if(Math.abs(d)<FPMIN)d=FPMIN; d=1/d; var h=d;
+  for(var m=1;m<=MAXIT;m++){ var m2=2*m;
+    var aa=m*(b-m)*x/((qam+m2)*(a+m2)); d=1+aa*d; if(Math.abs(d)<FPMIN)d=FPMIN; c=1+aa/c; if(Math.abs(c)<FPMIN)c=FPMIN; d=1/d; h*=d*c;
+    aa=-(a+m)*(qab+m)*x/((a+m2)*(qap+m2)); d=1+aa*d; if(Math.abs(d)<FPMIN)d=FPMIN; c=1+aa/c; if(Math.abs(c)<FPMIN)c=FPMIN; d=1/d;
+    var del=d*c; h*=del; if(Math.abs(del-1)<EPS) break; }
+  return h;
+}
+// regularised incomplete beta I_x(a,b)
+function ibeta(a,b,x){
+  if(x<=0) return 0; if(x>=1) return 1;
+  var bt=Math.exp(lgamma(a+b)-lgamma(a)-lgamma(b)+a*Math.log(x)+b*Math.log(1-x));
+  return x<(a+1)/(a+b+2) ? bt*betacf(a,b,x)/a : 1-bt*betacf(b,a,1-x)/b;
+}
+// regularised lower incomplete gamma P(a,x)
+function gammaP(a,x){
+  if(x<0||a<=0) return NaN; if(x===0) return 0;
+  if(x<a+1){ var ap=a,sum=1/a,del=sum; for(var n=1;n<=400;n++){ ap++; del*=x/ap; sum+=del; if(Math.abs(del)<Math.abs(sum)*1e-15) break; }
+    return sum*Math.exp(-x+a*Math.log(x)-lgamma(a)); }
+  var FPMIN=1e-300,b=x+1-a,c=1/FPMIN,d=1/b,h=d;
+  for(var i=1;i<=400;i++){ var an=-i*(i-a); b+=2; d=an*d+b; if(Math.abs(d)<FPMIN)d=FPMIN; c=b+an/c; if(Math.abs(c)<FPMIN)c=FPMIN; d=1/d; var dl=d*c; h*=dl; if(Math.abs(dl-1)<1e-15) break; }
+  return 1-Math.exp(-x+a*Math.log(x)-lgamma(a))*h;
+}
+function erf(x){ var s=x<0?-1:1; return s*gammaP(0.5,x*x); }
+function normalCDF(z){ return 0.5*(1+erf(z/Math.SQRT2)); }
+// inverse normal (Acklam)
+function normalInv(p){
+  if(p<=0)return -Infinity; if(p>=1)return Infinity;
+  var a=[-39.6968302866538,220.946098424521,-275.928510446969,138.357751867269,-30.6647980661472,2.50662827745924];
+  var b=[-54.4760987982241,161.585836858041,-155.698979859887,66.8013118877197,-13.2806815528857];
+  var c=[-0.00778489400243029,-0.322396458041136,-2.40075827716184,-2.54973253934373,4.37466414146497,2.93816398269878];
+  var d=[0.00778469570904146,0.32246712907004,2.445134137143,3.75440866190742];
+  var pl=0.02425,ph=1-pl,q,r;
+  if(p<pl){ q=Math.sqrt(-2*Math.log(p)); return (((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5])/((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1); }
+  if(p<=ph){ q=p-0.5; r=q*q; return (((((a[0]*r+a[1])*r+a[2])*r+a[3])*r+a[4])*r+a[5])*q/(((((b[0]*r+b[1])*r+b[2])*r+b[3])*r+b[4])*r+1); }
+  q=Math.sqrt(-2*Math.log(1-p)); return -(((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5])/((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1);
+}
+// t: CDF and two-tailed tail P(|T|>=|t|)
+function tCDF(t,df){ var x=df/(df+t*t), p=0.5*ibeta(df/2,0.5,x); return t>=0?1-p:p; }
+function tTail2(t,df){ if(!isFinite(t))return 0; return ibeta(df/2,0.5, df/(df+t*t)); }
+function tCrit(df,alpha){ // two-tailed critical t via bisection on tTail2
+  var lo=0,hi=1000; for(var i=0;i<200;i++){ var m=(lo+hi)/2; (tTail2(m,df)>alpha)?lo=m:hi=m; } return (lo+hi)/2;
+}
+// F upper-tail p-value
+function fTail(F,df1,df2){ if(F<=0)return 1; return ibeta(df2/2,df1/2, df2/(df2+df1*F)); }
+// chi-square upper-tail p-value
+function chi2Tail(x2,df){ if(x2<=0)return 1; return 1-gammaP(df/2, x2/2); }
+
+/* =================== (2) descriptives & analyses =================== */
+function num(a){ var o=[]; for(var i=0;i<a.length;i++){ var v=a[i]; if(v===null||v===undefined||v===""||(typeof v==="string"&&v.trim()==="")) continue; var x=+v; if(!isNaN(x)&&isFinite(x)) o.push(x); } return o; }
+function sum(a){ var s=0; for(var i=0;i<a.length;i++) s+=a[i]; return s; }
+function mean(a){ return a.length?sum(a)/a.length:NaN; }
+function variance(a){ var n=a.length; if(n<2)return NaN; var m=mean(a),s=0; for(var i=0;i<n;i++){var d=a[i]-m; s+=d*d;} return s/(n-1); }
+function sd(a){ return Math.sqrt(variance(a)); }
+function sortNum(a){ return a.slice().sort(function(p,q){return p-q;}); }
+function percentile(sorted,p){ var n=sorted.length; if(!n)return NaN; if(n===1)return sorted[0]; var idx=(n-1)*p, lo=Math.floor(idx),hi=Math.ceil(idx); return lo===hi?sorted[lo]:sorted[lo]+(idx-lo)*(sorted[hi]-sorted[lo]); }
+function median(a){ return percentile(sortNum(a),0.5); }
+function modeOf(a){ var m={},best=null,bc=0; a.forEach(function(v){ m[v]=(m[v]||0)+1; if(m[v]>bc){bc=m[v];best=v;} }); return best; }
+function skewness(a){ var n=a.length; if(n<3)return NaN; var m=mean(a),s=sd(a); if(s===0)return NaN; var t=0; for(var i=0;i<n;i++){var z=(a[i]-m)/s; t+=z*z*z;} return n/((n-1)*(n-2))*t; }
+function kurtosis(a){ var n=a.length; if(n<4)return NaN; var m=mean(a),s=sd(a); if(s===0)return NaN; var t=0; for(var i=0;i<n;i++){var z=(a[i]-m)/s; t+=z*z*z*z;} return n*(n+1)/((n-1)*(n-2)*(n-3))*t - 3*(n-1)*(n-1)/((n-2)*(n-3)); }
+function describe(a){ var x=num(a),n=x.length,s=sortNum(x),m=mean(x),v=variance(x),std=Math.sqrt(v);
+  return { n:n, mean:m, median:percentile(s,0.5), mode:modeOf(x), sd:std, variance:v, se:std/Math.sqrt(n),
+    min:s[0], max:s[n-1], range:s[n-1]-s[0], sum:sum(x), skew:skewness(x), seSkew:Math.sqrt(6*n*(n-1)/((n-2)*(n+1)*(n+3))),
+    kurt:kurtosis(x), seKurt:Math.sqrt(24*n*(n-1)*(n-1)/((n-3)*(n-2)*(n+3)*(n+5))),
+    p25:percentile(s,0.25), p50:percentile(s,0.5), p75:percentile(s,0.75), iqr:percentile(s,0.75)-percentile(s,0.25), data:x, sorted:s }; }
+
+function frequencies(a){ var counts={}, order=[]; a.forEach(function(v){ if(v===null||v===""||v===undefined)return; var k=String(v); if(!(k in counts)){counts[k]=0;order.push(k);} counts[k]++; });
+  var N=order.reduce(function(s,k){return s+counts[k];},0); order.sort(function(p,q){ var np=+p,nq=+q; if(!isNaN(np)&&!isNaN(nq))return np-nq; return p<q?-1:1; });
+  var cum=0, rows=order.map(function(k){ cum+=counts[k]; return {value:k,count:counts[k],pct:counts[k]/N*100,cum:cum/N*100}; }); return {N:N,rows:rows}; }
+
+function oneSampleT(a,mu){ var x=num(a),n=x.length,m=mean(x),s=sd(x),se=s/Math.sqrt(n),t=(m-mu)/se,df=n-1;
+  var tc=tCrit(df,0.05); return {n:n,mean:m,sd:s,se:se,mu:mu,meanDiff:m-mu,t:t,df:df,p:tTail2(t,df),
+    ciLo:(m-mu)-tc*se, ciHi:(m-mu)+tc*se, d:(m-mu)/s}; }
+
+function independentT(y,g){ // y numeric array, g group labels (same length)
+  var groups={}; for(var i=0;i<y.length;i++){ var gi=g[i]; if(gi===null||gi===""||y[i]===null||y[i]==="")continue; var yv=+y[i]; if(isNaN(yv))continue; (groups[gi]=groups[gi]||[]).push(yv); }
+  var keys=Object.keys(groups); if(keys.length<2) return {error:"Need exactly two groups"}; keys=keys.slice(0,2);
+  var A=groups[keys[0]],B=groups[keys[1]], n1=A.length,n2=B.length, m1=mean(A),m2=mean(B), v1=variance(A),v2=variance(B);
+  var diff=m1-m2;
+  var sp2=((n1-1)*v1+(n2-1)*v2)/(n1+n2-2), sePool=Math.sqrt(sp2*(1/n1+1/n2)), tPool=diff/sePool, dfPool=n1+n2-2;
+  var seW=Math.sqrt(v1/n1+v2/n2), tW=diff/seW, dfW=Math.pow(v1/n1+v2/n2,2)/(Math.pow(v1/n1,2)/(n1-1)+Math.pow(v2/n2,2)/(n2-1));
+  // Brown-Forsythe / Levene (median-centred) test of equal variance
+  var mdA=median(A),mdB=median(B), zA=A.map(function(v){return Math.abs(v-mdA);}), zB=B.map(function(v){return Math.abs(v-mdB);});
+  var lev=oneWayFromGroups([zA,zB]);
+  var tcP=tCrit(dfPool,0.05), tcW=tCrit(dfW,0.05), d=diff/Math.sqrt(sp2);
+  return {keys:keys, n1:n1,n2:n2,m1:m1,m2:m2,sd1:Math.sqrt(v1),sd2:Math.sqrt(v2),se1:Math.sqrt(v1/n1),se2:Math.sqrt(v2/n2),
+    diff:diff, pooled:{t:tPool,df:dfPool,p:tTail2(tPool,dfPool),se:sePool,ciLo:diff-tcP*sePool,ciHi:diff+tcP*sePool},
+    welch:{t:tW,df:dfW,p:tTail2(tW,dfW),se:seW,ciLo:diff-tcW*seW,ciHi:diff+tcW*seW},
+    levene:{F:lev.F,df1:lev.dfB,df2:lev.dfW,p:fTail(lev.F,lev.dfB,lev.dfW)}, d:d}; }
+
+function pairedT(a,b){ var d=[]; for(var i=0;i<a.length;i++){ if(a[i]===null||a[i]===""||b[i]===null||b[i]==="")continue; var x=+a[i],y=+b[i]; if(isNaN(x)||isNaN(y))continue; d.push(x-y); }
+  var n=d.length,md=mean(d),s=sd(d),se=s/Math.sqrt(n),t=md/se,df=n-1,tc=tCrit(df,0.05);
+  return {n:n,meanDiff:md,sdDiff:s,se:se,t:t,df:df,p:tTail2(t,df),ciLo:md-tc*se,ciHi:md+tc*se,
+    m1:mean(num(a)),m2:mean(num(b)), r:pearson(a,b).r, d:md/s}; }
+
+function oneWayFromGroups(gs){ var k=gs.length, N=0, grand=0, means=[], ns=[];
+  gs.forEach(function(g){ ns.push(g.length); N+=g.length; grand+=sum(g); means.push(mean(g)); }); grand/=N;
+  var SSB=0,SSW=0; for(var i=0;i<k;i++){ SSB+=ns[i]*Math.pow(means[i]-grand,2); for(var j=0;j<gs[i].length;j++) SSW+=Math.pow(gs[i][j]-means[i],2); }
+  var dfB=k-1,dfW=N-k, MSB=SSB/dfB, MSW=SSW/dfW, F=MSB/MSW;
+  return {k:k,N:N,ns:ns,means:means,SSB:SSB,SSW:SSW,SST:SSB+SSW,dfB:dfB,dfW:dfW,MSB:MSB,MSW:MSW,F:F,p:fTail(F,dfB,dfW),eta2:SSB/(SSB+SSW)}; }
+function oneWayANOVA(y,g){ var groups={},keys=[]; for(var i=0;i<y.length;i++){ var gi=g[i]; if(gi===null||gi===""||y[i]===null||y[i]==="")continue; var yv=+y[i]; if(isNaN(yv))continue; if(!(gi in groups)){groups[gi]=[];keys.push(gi);} groups[gi].push(yv); }
+  keys.sort(function(p,q){var np=+p,nq=+q; if(!isNaN(np)&&!isNaN(nq))return np-nq; return p<q?-1:1;});
+  var gs=keys.map(function(k){return groups[k];}), r=oneWayFromGroups(gs); r.keys=keys; r.sds=gs.map(sd); return r; }
+
+function pearson(a,b){ var xs=[],ys=[]; for(var i=0;i<a.length;i++){ if(a[i]===null||a[i]===""||b[i]===null||b[i]==="")continue; var x=+a[i],y=+b[i]; if(isNaN(x)||isNaN(y))continue; xs.push(x); ys.push(y); }
+  var n=xs.length,mx=mean(xs),my=mean(ys),sxy=0,sx=0,sy=0; for(var j=0;j<n;j++){ var dx=xs[j]-mx,dy=ys[j]-my; sxy+=dx*dy; sx+=dx*dx; sy+=dy*dy; }
+  var r=sxy/Math.sqrt(sx*sy), t=r*Math.sqrt((n-2)/(1-r*r)); return {r:r,n:n,t:t,df:n-2,p:tTail2(t,n-2)}; }
+function rankify(v){ var idx=v.map(function(x,i){return[x,i];}); idx.sort(function(p,q){return p[0]-q[0];}); var ranks=new Array(v.length),i=0;
+  while(i<idx.length){ var j=i; while(j+1<idx.length&&idx[j+1][0]===idx[i][0])j++; var r=(i+j)/2+1; for(var k=i;k<=j;k++) ranks[idx[k][1]]=r; i=j+1; } return ranks; }
+function spearman(a,b){ var xs=[],ys=[]; for(var i=0;i<a.length;i++){ if(a[i]===null||a[i]===""||b[i]===null||b[i]==="")continue; var x=+a[i],y=+b[i]; if(isNaN(x)||isNaN(y))continue; xs.push(x); ys.push(y); }
+  var rx=rankify(xs),ry=rankify(ys); return pearson(rx,ry); }
+
+// matrix helpers for regression
+function matInv(M){ var n=M.length, A=M.map(function(r,i){ return r.concat(identityRow(n,i)); });
+  for(var c=0;c<n;c++){ var piv=c; for(var r=c+1;r<n;r++) if(Math.abs(A[r][c])>Math.abs(A[piv][c])) piv=r; var tmp=A[c];A[c]=A[piv];A[piv]=tmp;
+    var pv=A[c][c]; if(Math.abs(pv)<1e-12) return null; for(var k=0;k<2*n;k++) A[c][k]/=pv;
+    for(var r2=0;r2<n;r2++){ if(r2===c)continue; var f=A[r2][c]; for(var k2=0;k2<2*n;k2++) A[r2][k2]-=f*A[c][k2]; } }
+  return A.map(function(r){return r.slice(n);}); }
+function identityRow(n,i){ var r=[]; for(var j=0;j<n;j++) r.push(i===j?1:0); return r; }
+function linReg(yv,Xcols){ // yv: array; Xcols: array of predictor arrays (each same length)
+  var rows=[],ys=[]; var n0=yv.length;
+  for(var i=0;i<n0;i++){ var ok=(yv[i]!==null&&yv[i]!==""&&!isNaN(+yv[i])); var xr=[1];
+    for(var c=0;c<Xcols.length;c++){ var xv=Xcols[c][i]; if(xv===null||xv===""||isNaN(+xv)){ok=false;break;} xr.push(+xv); }
+    if(ok){ rows.push(xr); ys.push(+yv[i]); } }
+  var n=rows.length, p=Xcols.length+1; // params incl intercept
+  // XtX and Xty
+  var XtX=[],Xty=[]; for(var a=0;a<p;a++){ XtX.push(new Array(p).fill(0)); Xty.push(0); }
+  for(var r=0;r<n;r++){ for(var a2=0;a2<p;a2++){ Xty[a2]+=rows[r][a2]*ys[r]; for(var b=0;b<p;b++) XtX[a2][b]+=rows[r][a2]*rows[r][b]; } }
+  var inv=matInv(XtX); if(!inv) return {error:"Singular matrix (predictors collinear)"};
+  var beta=[]; for(var a3=0;a3<p;a3++){ var s=0; for(var b2=0;b2<p;b2++) s+=inv[a3][b2]*Xty[b2]; beta.push(s); }
+  var ybar=mean(ys), SST=0,SSE=0, fitted=[],resid=[];
+  for(var r2=0;r2<n;r2++){ var yhat=0; for(var a4=0;a4<p;a4++) yhat+=beta[a4]*rows[r2][a4]; fitted.push(yhat); resid.push(ys[r2]-yhat); SSE+=Math.pow(ys[r2]-yhat,2); SST+=Math.pow(ys[r2]-ybar,2); }
+  var SSR=SST-SSE, dfR=p-1, dfE=n-p, R2=SSR/SST, adjR2=1-(1-R2)*(n-1)/(n-p), MSE=SSE/dfE, F=(SSR/dfR)/MSE;
+  var se=[],tvals=[],pvals=[]; for(var a5=0;a5<p;a5++){ var sej=Math.sqrt(MSE*inv[a5][a5]); se.push(sej); var tj=beta[a5]/sej; tvals.push(tj); pvals.push(tTail2(tj,dfE)); }
+  // standardised betas
+  var sdY=sd(ys), stdBeta=[0]; for(var c2=0;c2<Xcols.length;c2++){ var col=rows.map(function(rr){return rr[c2+1];}); stdBeta.push(beta[c2+1]*sd(col)/sdY); }
+  return {n:n,p:p,beta:beta,se:se,t:tvals,pval:pvals,stdBeta:stdBeta,R2:R2,adjR2:adjR2,SSR:SSR,SSE:SSE,SST:SST,dfR:dfR,dfE:dfE,MSE:MSE,F:F,pF:fTail(F,dfR,dfE),seEst:Math.sqrt(MSE),resid:resid,fitted:fitted,ys:ys}; }
+
+function crosstab(rowV,colV){ var rk=[],ck=[],cell={},rt={},ct={},N=0;
+  for(var i=0;i<rowV.length;i++){ var rr=rowV[i],cc=colV[i]; if(rr===null||rr===""||cc===null||cc==="")continue; rr=String(rr);cc=String(cc);
+    if(rk.indexOf(rr)<0)rk.push(rr); if(ck.indexOf(cc)<0)ck.push(cc); var key=rr+"\u0001"+cc; cell[key]=(cell[key]||0)+1; rt[rr]=(rt[rr]||0)+1; ct[cc]=(ct[cc]||0)+1; N++; }
+  var srt=function(x){x.sort(function(p,q){var a=+p,b=+q; if(!isNaN(a)&&!isNaN(b))return a-b; return p<q?-1:1;});}; srt(rk); srt(ck);
+  var chi2=0; for(var a=0;a<rk.length;a++)for(var b=0;b<ck.length;b++){ var O=cell[rk[a]+"\u0001"+ck[b]]||0, E=rt[rk[a]]*ct[ck[b]]/N; if(E>0)chi2+=Math.pow(O-E,2)/E; }
+  var df=(rk.length-1)*(ck.length-1), V=Math.sqrt(chi2/(N*Math.min(rk.length-1,ck.length-1)||1));
+  return {rk:rk,ck:ck,cell:cell,rt:rt,ct:ct,N:N,chi2:chi2,df:df,p:chi2Tail(chi2,df),cramerV:V}; }
+
+/* =================== (3) data model + spreadsheet =================== */
+var vars=[];   // {name,type:'numeric'|'string',label,measure,values:{}}
+var data=[];   // rows: array of arrays
+function newVar(name,measure){ return {name:name,type:"numeric",label:"",measure:measure||"scale",values:{}}; }
+function colValues(ci){ return data.map(function(r){return r[ci];}); }
+function fmt(x,dp){ if(x===null||x===undefined||x===""||(typeof x==="number"&&isNaN(x)))return "."; if(typeof x!=="number")return x; dp=dp===undefined?3:dp; if(!isFinite(x))return x>0?"∞":"−∞"; return (x<0?"−":"")+Math.abs(x).toFixed(dp); }
+function pfmt(p){ if(p===null||isNaN(p))return "."; return p<0.001?"< .001":p.toFixed(3).replace(/^0/,""); }
+function sigClass(p){ return p<0.05?"sig":"nsig"; }
+
+function renderData(){
+  var host=document.getElementById("view-data");
+  var maxRows=Math.max(data.length, 12), maxVars=Math.max(vars.length,1);
+  var h='<table class="grid"><thead><tr><th class="corner"></th>';
+  for(var c=0;c<vars.length;c++){ var mz=vars[c].measure; h+='<th>'+escapeHtml(vars[c].name)+'<div class="mz">'+(vars[c].label||mz)+'</div></th>'; }
+  h+='</tr></thead><tbody>';
+  for(var r=0;r<maxRows;r++){ h+='<tr><td class="rownum">'+(r+1)+'</td>';
+    for(var c2=0;c2<vars.length;c2++){ var v=(data[r]&&data[r][c2]!==undefined)?data[r][c2]:""; var strc=vars[c2].type==="string"?" str":"";
+      h+='<td class="'+strc.trim()+'"><input data-r="'+r+'" data-c="'+c2+'" value="'+escapeHtml(v===null?"":v)+'"></td>'; }
+    h+='</tr>'; }
+  h+='</tbody></table>';
+  host.innerHTML=h;
+  host.querySelectorAll("input").forEach(function(inp){ inp.addEventListener("change",function(){ var r=+this.dataset.r,c=+this.dataset.c; while(data.length<=r)data.push(new Array(vars.length).fill("")); data[r][c]=this.value; updateDims(); }); });
+  updateDims();
+}
+function renderVarView(){
+  var host=document.getElementById("view-var");
+  var h='<table class="vv"><thead><tr><th>Name</th><th>Type</th><th>Label</th><th>Measure</th><th>Value labels</th></tr></thead><tbody>';
+  for(var i=0;i<vars.length;i++){ var v=vars[i];
+    h+='<tr><td><input data-i="'+i+'" data-k="name" value="'+escapeHtml(v.name)+'"></td>'+
+       '<td><select data-i="'+i+'" data-k="type"><option value="numeric"'+(v.type==="numeric"?" selected":"")+'>Numeric</option><option value="string"'+(v.type==="string"?" selected":"")+'>String</option></select></td>'+
+       '<td><input data-i="'+i+'" data-k="label" value="'+escapeHtml(v.label)+'"></td>'+
+       '<td><select data-i="'+i+'" data-k="measure"><option value="scale"'+(v.measure==="scale"?" selected":"")+'>Scale</option><option value="ordinal"'+(v.measure==="ordinal"?" selected":"")+'>Ordinal</option><option value="nominal"'+(v.measure==="nominal"?" selected":"")+'>Nominal</option></select></td>'+
+       '<td><input data-i="'+i+'" data-k="values" value="'+escapeHtml(Object.keys(v.values).map(function(k){return k+"="+v.values[k];}).join("; "))+'" placeholder="1=Male; 2=Female"></td></tr>';
+  }
+  h+='</tbody></table>';
+  host.innerHTML=h;
+  host.querySelectorAll("input,select").forEach(function(el){ el.addEventListener("change",function(){ var i=+this.dataset.i,k=this.dataset.k;
+    if(k==="values"){ var m={}; this.value.split(";").forEach(function(pair){ var kv=pair.split("="); if(kv.length===2)m[kv[0].trim()]=kv[1].trim(); }); vars[i].values=m; }
+    else vars[i][k]=this.value; renderData(); }); });
+}
+function updateDims(){ var nc=data.filter(function(r){return r.some(function(x){return x!==""&&x!==null;});}).length; document.getElementById("dims").textContent=nc+" cases · "+vars.length+" variables"; }
+function escapeHtml(s){ return String(s==null?"":s).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];}); }
+
+function addVar(name,measure){ vars.push(newVar(name||("VAR"+(vars.length+1)),measure)); data.forEach(function(r){ r.push(""); }); renderData(); renderVarView(); }
+function addRows(k){ for(var i=0;i<k;i++) data.push(new Array(vars.length).fill("")); renderData(); }
+function clearAll(){ vars=[]; data=[]; renderData(); renderVarView(); }
+
+/* CSV */
+function parseCSV(text){ var lines=text.replace(/\r/g,"").split("\n").filter(function(l){return l.length;}); if(!lines.length)return;
+  var head=splitCSVLine(lines[0]); clearAll(); head.forEach(function(nm){ vars.push(newVar(nm.trim()||("VAR"+(vars.length+1)),"scale")); });
+  for(var i=1;i<lines.length;i++){ var cells=splitCSVLine(lines[i]); data.push(head.map(function(_,c){return cells[c]!==undefined?cells[c].trim():"";})); }
+  // infer string vars
+  vars.forEach(function(v,ci){ var vals=colValues(ci).filter(function(x){return x!=="";}); var anyStr=vals.some(function(x){return isNaN(+x);}); if(anyStr){v.type="string";v.measure="nominal";} else { var uniq=new Set(vals); if(uniq.size<=6)v.measure="nominal"; } });
+  renderData(); renderVarView(); switchTab("data"); }
+function splitCSVLine(line){ var out=[],cur="",q=false; for(var i=0;i<line.length;i++){ var ch=line[i]; if(q){ if(ch==='"'){ if(line[i+1]==='"'){cur+='"';i++;} else q=false; } else cur+=ch; } else { if(ch==='"')q=true; else if(ch===","){out.push(cur);cur="";} else cur+=ch; } } out.push(cur); return out; }
+
+/* =================== (4) dialogs + output =================== */
+var numericVarIdx=function(){ var a=[]; vars.forEach(function(v,i){ if(v.type==="numeric")a.push(i); }); return a; };
+var allVarIdx=function(){ return vars.map(function(_,i){return i;}); };
+
+function openDialog(title,bodyHTML,onRun){ document.getElementById("dlg-t").firstChild.textContent="";
+  document.getElementById("dlg-t").childNodes[0].nodeValue=title+" "; document.getElementById("dlg-body").innerHTML=bodyHTML;
+  var m=document.getElementById("dlg"); m.classList.add("on"); var run=document.getElementById("dlg-run");
+  var nr=run.cloneNode(true); run.parentNode.replaceChild(nr,run); nr.addEventListener("click",function(){ if(onRun()!==false){ m.classList.remove("on"); switchTab("out"); } }); }
+function closeModals(){ document.querySelectorAll(".modal").forEach(function(m){m.classList.remove("on");}); }
+
+// dual-list picker builder
+function pickerHTML(id,label,candidates,multi){ var opts=candidates.map(function(ci){ return '<div class="pi" data-i="'+ci+'"><span class="dot '+vars[ci].measure+'"></span>'+escapeHtml(vars[ci].name)+'</div>'; }).join("");
+  return '<div class="picker-wrap"><h4>'+label+'</h4><div class="picker" id="'+id+'-src">'+opts+'</div></div>'; }
+function selHTML(id,label,candidates){ var opts=candidates.map(function(ci){return '<option value="'+ci+'">'+escapeHtml(vars[ci].name)+'</option>';}).join(""); return '<label style="display:block;margin-bottom:10px"><div style="color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px">'+label+'</div><select class="sf" id="'+id+'" style="width:100%;background:var(--grid);border:1px solid var(--line);border-radius:7px;padding:7px">'+opts+'</select></label>'; }
+function wireSingleSelect(containerId){ var box=document.getElementById(containerId); var chosen=[]; box.querySelectorAll(".pi").forEach(function(pi){ pi.addEventListener("click",function(){ box.querySelectorAll(".pi").forEach(function(p){p.classList.remove("sel");}); pi.classList.add("sel"); }); }); return function(){ var s=box.querySelector(".pi.sel"); return s?+s.dataset.i:null; }; }
+function wireMultiSelect(containerId){ var box=document.getElementById(containerId); box.querySelectorAll(".pi").forEach(function(pi){ pi.addEventListener("click",function(){ pi.classList.toggle("sel"); }); }); return function(){ return Array.prototype.map.call(box.querySelectorAll(".pi.sel"),function(p){return +p.dataset.i;}); }; }
+
+function outBlock(title,tag){ var b=document.createElement("div"); b.className="block"; b.innerHTML='<h3>'+escapeHtml(title)+(tag?'<span class="tag">'+escapeHtml(tag)+'</span>':'')+'</h3><div class="body"></div>'; document.getElementById("out").appendChild(b); document.getElementById("out-empty").style.display="none"; b.scrollIntoView({behavior:"smooth",block:"start"}); return b.querySelector(".body"); }
+function pivTable(caption,headers,rows){ var h='<table class="piv">'+(caption?'<caption>'+escapeHtml(caption)+'</caption>':'')+'<thead><tr>'; headers.forEach(function(x,i){ h+='<th class="'+(i===0?"lab":"")+'">'+x+'</th>'; }); h+='</tr></thead><tbody>';
+  rows.forEach(function(r){ h+='<tr>'; r.forEach(function(cell,i){ var cls=i===0?"lab":""; if(typeof cell==="object"){ h+='<td class="'+cls+' '+(cell.cls||"")+'">'+cell.v+'</td>'; } else h+='<td class="'+cls+'">'+cell+'</td>'; }); h+='</tr>'; }); h+='</tbody></table>'; return h; }
+
+/* ---- individual analysis launchers ---- */
+function dlgDescriptives(){ var cand=numericVarIdx(); if(!cand.length)return alert("No numeric variables.");
+  openDialog("Descriptives", pickerHTML("d","Variables (click to select)",cand,true), function(){ var get=wireGet; var sel=getMulti(); if(!sel.length)return false; runDescriptives(sel); });
+  var getMulti=wireMultiSelect("d-src"); var wireGet=null; document.getElementById("dlg-run").onclick=null;
+  bindRun(function(){ var sel=getMulti(); if(!sel.length){alert("Select at least one variable.");return false;} runDescriptives(sel); }); }
+function runDescriptives(sel){ var body=outBlock("Descriptive Statistics","Analyze ▸ Descriptives");
+  var rows=sel.map(function(ci){ var d=describe(colValues(ci)); return [vars[ci].name, d.n, fmt(d.min,2), fmt(d.max,2), fmt(d.mean,3), fmt(d.se,3), fmt(d.sd,3), fmt(d.variance,3), fmt(d.skew,3), fmt(d.kurt,3)]; });
+  body.innerHTML=pivTable(null,["Variable","N","Minimum","Maximum","Mean","Std. Error","Std. Dev.","Variance","Skewness","Kurtosis"],rows)
+    +'<p class="note">Std. Error is of the mean. Skewness and kurtosis are the sample (G1, G2) estimators; excess kurtosis is reported.</p>'; }
+
+function dlgFrequencies(){ var cand=allVarIdx(); openDialog("Frequencies", pickerHTML("f","Variable",cand,false),function(){});
+  var get=wireSingleSelect("f-src"); bindRun(function(){ var ci=get(); if(ci===null){alert("Select a variable.");return false;} runFrequencies(ci); }); }
+function runFrequencies(ci){ var body=outBlock("Frequencies — "+vars[ci].name,"Analyze ▸ Frequencies"); var f=frequencies(colValues(ci));
+  var lbl=vars[ci].values; var rows=f.rows.map(function(r){ var lab=lbl[r.value]?r.value+" ("+lbl[r.value]+")":r.value; return [lab, r.count, fmt(r.pct,1), fmt(r.cum,1)]; });
+  rows.push([{v:"Total",cls:""}, f.N, "100.0", ""]);
+  body.innerHTML=pivTable(null,["Value","Frequency","Percent","Cumulative %"],rows);
+  drawBar(body, f.rows.map(function(r){return r.value;}), f.rows.map(function(r){return r.count;}), "Count"); }
+
+function dlgExplore(){ var cand=numericVarIdx(); openDialog("Explore", pickerHTML("e","Variable",cand,false),function(){});
+  var get=wireSingleSelect("e-src"); bindRun(function(){ var ci=get(); if(ci===null){alert("Select a variable.");return false;} runExplore(ci); }); }
+function runExplore(ci){ var body=outBlock("Explore — "+vars[ci].name,"Analyze ▸ Explore"); var d=describe(colValues(ci));
+  var rows=[["Mean",fmt(d.mean,3),{v:fmt(d.se,3)}],["Median",fmt(d.median,3),""],["Std. Deviation",fmt(d.sd,3),""],
+    ["Minimum",fmt(d.min,2),""],["Maximum",fmt(d.max,2),""],["Range",fmt(d.range,2),""],["IQR",fmt(d.iqr,2),""],
+    ["Skewness",fmt(d.skew,3),{v:fmt(d.seSkew,3)}],["Kurtosis",fmt(d.kurt,3),{v:fmt(d.seKurt,3)}]];
+  body.innerHTML=pivTable("Descriptives ("+d.n+" valid cases)",["Statistic","Value","Std. Error"],rows);
+  drawHist(body,d.data,vars[ci].name); drawBox(body,[{label:vars[ci].name,data:d.data}]); }
+
+function dlgOneSampleT(){ var cand=numericVarIdx(); openDialog("One-sample T test", pickerHTML("t1","Test variable",cand,false)+
+  '<div class="opts"><label>Test value <input type="number" id="t1-mu" value="0" step="any"></label></div>',function(){});
+  var get=wireSingleSelect("t1-src"); bindRun(function(){ var ci=get(); if(ci===null){alert("Select a variable.");return false;} runOneSampleT(ci,+document.getElementById("t1-mu").value); }); }
+function runOneSampleT(ci,mu){ var body=outBlock("One-Sample T Test — "+vars[ci].name,"Test value = "+mu); var r=oneSampleT(colValues(ci),mu);
+  body.innerHTML=pivTable("One-Sample Statistics",["","N","Mean","Std. Dev.","Std. Error Mean"],[[vars[ci].name,r.n,fmt(r.mean,3),fmt(r.sd,3),fmt(r.se,3)]])
+   +pivTable("One-Sample Test",["","t","df","Sig. (2-tailed)","Mean Diff.","95% CI Lower","95% CI Upper"],
+     [[vars[ci].name,fmt(r.t,3),r.df,{v:pfmt(r.p),cls:sigClass(r.p)},fmt(r.meanDiff,3),fmt(r.ciLo,3),fmt(r.ciHi,3)]])
+   +apa("t("+r.df+") = "+fmt(r.t,2)+", p "+(r.p<0.001?"< .001":"= "+pfmt(r.p))+", mean difference = "+fmt(r.meanDiff,2)+
+     " (95% CI ["+fmt(r.ciLo,2)+", "+fmt(r.ciHi,2)+"]), Cohen's d = "+fmt(r.d,2)+". "+
+     (r.p<0.05?"The mean differs significantly from "+mu+".":"No significant difference from "+mu+".")); }
+
+function dlgIndT(){ var numc=numericVarIdx(); openDialog("Independent-samples T test",
+  selHTML("it-y","Test variable (numeric)",numc)+selHTML("it-g","Grouping variable",allVarIdx()),function(){});
+  bindRun(function(){ var y=+document.getElementById("it-y").value,g=+document.getElementById("it-g").value; if(y===g){alert("Choose different variables.");return false;} runIndT(y,g); }); }
+function runIndT(yi,gi){ var r=independentT(colValues(yi),colValues(gi)); if(r.error){alert(r.error);return;}
+  var body=outBlock("Independent-Samples T Test — "+vars[yi].name+" by "+vars[gi].name,"Analyze ▸ Compare means");
+  var lbl=function(k){ return vars[gi].values[k]?k+" ("+vars[gi].values[k]+")":k; };
+  body.innerHTML=pivTable("Group Statistics",["Group","N","Mean","Std. Dev.","Std. Error Mean"],
+      [[lbl(r.keys[0]),r.n1,fmt(r.m1,3),fmt(r.sd1,3),fmt(r.se1,3)],[lbl(r.keys[1]),r.n2,fmt(r.m2,3),fmt(r.sd2,3),fmt(r.se2,3)]])
+    +pivTable("Independent Samples Test",["Method","Levene F","Levene Sig.","t","df","Sig. (2-tailed)","Mean Diff.","Std. Error","95% CI"],
+      [["Equal variances assumed",fmt(r.levene.F,3),{v:pfmt(r.levene.p)},fmt(r.pooled.t,3),fmt(r.pooled.df,0),{v:pfmt(r.pooled.p),cls:sigClass(r.pooled.p)},fmt(r.diff,3),fmt(r.pooled.se,3),"["+fmt(r.pooled.ciLo,2)+", "+fmt(r.pooled.ciHi,2)+"]"],
+       ["Equal variances not assumed","","",fmt(r.welch.t,3),fmt(r.welch.df,2),{v:pfmt(r.welch.p),cls:sigClass(r.welch.p)},fmt(r.diff,3),fmt(r.welch.se,3),"["+fmt(r.welch.ciLo,2)+", "+fmt(r.welch.ciHi,2)+"]"]])
+    +apa("Levene's test "+(r.levene.p<0.05?"was significant (p = "+pfmt(r.levene.p)+"), so Welch's correction is reported: t("+fmt(r.welch.df,1)+") = "+fmt(r.welch.t,2)+", p "+(r.welch.p<0.001?"< .001":"= "+pfmt(r.welch.p)):"was not significant (p = "+pfmt(r.levene.p)+"); equal variances assumed: t("+r.pooled.df+") = "+fmt(r.pooled.t,2)+", p "+(r.pooled.p<0.001?"< .001":"= "+pfmt(r.pooled.p)))+
+      ". Mean difference = "+fmt(r.diff,2)+", Cohen's d = "+fmt(r.d,2)+".");
+  drawBox(body,[{label:lbl(r.keys[0]),data:num(colValues(yi).filter(function(_,i){return String(colValues(gi)[i])===r.keys[0];}))},
+                {label:lbl(r.keys[1]),data:num(colValues(yi).filter(function(_,i){return String(colValues(gi)[i])===r.keys[1];}))}]); }
+
+function dlgPairedT(){ var numc=numericVarIdx(); openDialog("Paired-samples T test", selHTML("pt-1","Variable 1",numc)+selHTML("pt-2","Variable 2",numc),function(){});
+  bindRun(function(){ var a=+document.getElementById("pt-1").value,b=+document.getElementById("pt-2").value; if(a===b){alert("Choose two different variables.");return false;} runPairedT(a,b); }); }
+function runPairedT(a,b){ var r=pairedT(colValues(a),colValues(b)); var body=outBlock("Paired-Samples T Test — "+vars[a].name+" & "+vars[b].name,"Analyze ▸ Compare means");
+  body.innerHTML=pivTable("Paired Samples Statistics",["","Mean","N","Correlation"],[[vars[a].name,fmt(r.m1,3),r.n,{v:fmt(r.r,3)}],[vars[b].name,fmt(r.m2,3),r.n,""]])
+    +pivTable("Paired Samples Test",["","Mean Diff.","Std. Dev.","Std. Error","t","df","Sig. (2-tailed)","95% CI"],
+      [[vars[a].name+" − "+vars[b].name,fmt(r.meanDiff,3),fmt(r.sdDiff,3),fmt(r.se,3),fmt(r.t,3),r.df,{v:pfmt(r.p),cls:sigClass(r.p)},"["+fmt(r.ciLo,2)+", "+fmt(r.ciHi,2)+"]"]])
+    +apa("t("+r.df+") = "+fmt(r.t,2)+", p "+(r.p<0.001?"< .001":"= "+pfmt(r.p))+", mean difference = "+fmt(r.meanDiff,2)+", Cohen's d = "+fmt(r.d,2)+". "+(r.p<0.05?"The paired means differ significantly.":"No significant paired difference.")); }
+
+function dlgANOVA(){ var numc=numericVarIdx(); openDialog("One-way ANOVA", selHTML("av-y","Dependent (numeric)",numc)+selHTML("av-g","Factor (groups)",allVarIdx()),function(){});
+  bindRun(function(){ var y=+document.getElementById("av-y").value,g=+document.getElementById("av-g").value; if(y===g){alert("Choose different variables.");return false;} runANOVA(y,g); }); }
+function runANOVA(yi,gi){ var r=oneWayANOVA(colValues(yi),colValues(gi)); var body=outBlock("One-Way ANOVA — "+vars[yi].name+" by "+vars[gi].name,"Analyze ▸ Compare means");
+  var lbl=function(k){ return vars[gi].values[k]?k+" ("+vars[gi].values[k]+")":k; };
+  var desc=r.keys.map(function(k,i){ return [lbl(k),r.ns[i],fmt(r.means[i],3),fmt(r.sds[i],3)]; });
+  body.innerHTML=pivTable("Descriptives",["Group","N","Mean","Std. Dev."],desc)
+    +pivTable("ANOVA — "+vars[yi].name,["Source","Sum of Squares","df","Mean Square","F","Sig."],
+      [["Between Groups",fmt(r.SSB,3),r.dfB,fmt(r.MSB,3),fmt(r.F,3),{v:pfmt(r.p),cls:sigClass(r.p)}],
+       ["Within Groups",fmt(r.SSW,3),r.dfW,fmt(r.MSW,3),"",""],
+       ["Total",fmt(r.SST,3),r.dfB+r.dfW,"","",""]])
+    +apa("F("+r.dfB+", "+r.dfW+") = "+fmt(r.F,2)+", p "+(r.p<0.001?"< .001":"= "+pfmt(r.p))+", η² = "+fmt(r.eta2,3)+". "+(r.p<0.05?"At least one group mean differs significantly.":"No significant differences among group means."));
+  drawBox(body,r.keys.map(function(k){ return {label:lbl(k),data:num(colValues(yi).filter(function(_,i){return String(colValues(gi)[i])===k;}))}; })); }
+
+function dlgCorrelate(){ var numc=numericVarIdx(); openDialog("Bivariate correlation", pickerHTML("co","Variables (click to select 2+)",numc,true)+
+  '<div class="opts"><label><input type="radio" name="co-m" value="pearson" checked> Pearson</label><label><input type="radio" name="co-m" value="spearman"> Spearman</label></div>',function(){});
+  var getMulti=wireMultiSelect("co-src"); bindRun(function(){ var sel=getMulti(); if(sel.length<2){alert("Select at least two variables.");return false;} var m=document.querySelector('input[name=co-m]:checked').value; runCorrelate(sel,m); }); }
+function runCorrelate(sel,method){ var body=outBlock((method==="spearman"?"Spearman":"Pearson")+" Correlations","Analyze ▸ Correlate");
+  var fn=method==="spearman"?spearman:pearson;
+  var head=[""].concat(sel.map(function(ci){return vars[ci].name;}));
+  var rows=[]; sel.forEach(function(ri){ var rowR=[vars[ri].name], rowP=[""]; sel.forEach(function(cj){ if(ri===cj){ rowR.push({v:"1",cls:""}); rowP.push(""); } else { var res=fn(colValues(ri),colValues(cj)); rowR.push({v:fmt(res.r,3),cls:res.p<0.05?"sig":""}); rowP.push({v:"p = "+pfmt(res.p)}); } });
+    rows.push(rowR); rows.push([{v:"",cls:""}].concat(rowP.slice(1).map(function(x){return {v:(x&&x.v)||"",cls:"nsig"};}))); });
+  body.innerHTML=pivTable(method==="spearman"?"Spearman's rho":"Pearson correlation coefficient",head,rows)
+    +'<p class="note">Each cell shows the coefficient with its two-tailed significance below. Bold-green coefficients are significant at α = .05 ('+fn.name+", n pairwise).</p>";
+  if(sel.length===2){ drawScatter(body, num2(colValues(sel[0]),colValues(sel[1])), vars[sel[0]].name, vars[sel[1]].name); } }
+
+function dlgRegression(){ var numc=numericVarIdx(); openDialog("Linear regression", selHTML("rg-y","Dependent",numc)+pickerHTML("rg","Independent(s) — click to select",numc,true),function(){});
+  var getMulti=wireMultiSelect("rg-src"); bindRun(function(){ var y=+document.getElementById("rg-y").value; var xs=getMulti().filter(function(i){return i!==y;}); if(!xs.length){alert("Select at least one predictor.");return false;} runRegression(y,xs); }); }
+function runRegression(yi,xis){ var r=linReg(colValues(yi), xis.map(function(i){return colValues(i);})); if(r.error){alert(r.error);return;}
+  var body=outBlock("Linear Regression — DV: "+vars[yi].name,"Analyze ▸ Regression");
+  var coefRows=[["(Constant)",fmt(r.beta[0],4),fmt(r.se[0],4),"",fmt(r.t[0],3),{v:pfmt(r.pval[0]),cls:sigClass(r.pval[0])}]];
+  xis.forEach(function(xi,k){ coefRows.push([vars[xi].name,fmt(r.beta[k+1],4),fmt(r.se[k+1],4),fmt(r.stdBeta[k+1],3),fmt(r.t[k+1],3),{v:pfmt(r.pval[k+1]),cls:sigClass(r.pval[k+1])}]); });
+  body.innerHTML=pivTable("Model Summary",["R","R Square","Adjusted R Square","Std. Error of Estimate"],[[fmt(Math.sqrt(r.R2),3),fmt(r.R2,3),fmt(r.adjR2,3),fmt(r.seEst,3)]])
+    +pivTable("ANOVA",["Source","Sum of Squares","df","Mean Square","F","Sig."],
+      [["Regression",fmt(r.SSR,3),r.dfR,fmt(r.SSR/r.dfR,3),fmt(r.F,3),{v:pfmt(r.pF),cls:sigClass(r.pF)}],
+       ["Residual",fmt(r.SSE,3),r.dfE,fmt(r.MSE,3),"",""],["Total",fmt(r.SST,3),r.dfR+r.dfE,"","",""]])
+    +pivTable("Coefficients",["Predictor","B","Std. Error","β (std.)","t","Sig."],coefRows)
+    +apa("The model explained "+fmt(r.R2*100,1)+"% of the variance (R² = "+fmt(r.R2,3)+", adjusted R² = "+fmt(r.adjR2,3)+"), F("+r.dfR+", "+r.dfE+") = "+fmt(r.F,2)+", p "+(r.pF<0.001?"< .001":"= "+pfmt(r.pF))+".");
+  drawScatter(body, r.fitted.map(function(f,i){return [f,r.resid[i]];}), "Predicted value", "Residual", true); }
+
+function dlgCrosstabs(){ var cand=allVarIdx(); openDialog("Crosstabs (χ²)", selHTML("ct-r","Row variable",cand)+selHTML("ct-c","Column variable",cand),function(){});
+  bindRun(function(){ var ri=+document.getElementById("ct-r").value,cj=+document.getElementById("ct-c").value; if(ri===cj){alert("Choose different variables.");return false;} runCrosstabs(ri,cj); }); }
+function runCrosstabs(ri,cj){ var t=crosstab(colValues(ri),colValues(cj)); var body=outBlock("Crosstabs — "+vars[ri].name+" × "+vars[cj].name,"Analyze ▸ Crosstabs");
+  var lblR=function(k){return vars[ri].values[k]?k+" ("+vars[ri].values[k]+")":k;}, lblC=function(k){return vars[cj].values[k]?k+" ("+vars[cj].values[k]+")":k;};
+  var head=[vars[ri].name+" \\ "+vars[cj].name].concat(t.ck.map(lblC)).concat(["Total"]);
+  var rows=t.rk.map(function(rk){ var row=[lblR(rk)]; t.ck.forEach(function(ck){ row.push(t.cell[rk+"\u0001"+ck]||0); }); row.push(t.rt[rk]); return row; });
+  var totRow=["Total"].concat(t.ck.map(function(ck){return t.ct[ck];})).concat([t.N]); rows.push(totRow);
+  body.innerHTML=pivTable("Crosstabulation (counts)",head,rows)
+    +pivTable("Chi-Square Test",["","Value","df","Asymp. Sig. (2-sided)"],[["Pearson Chi-Square",fmt(t.chi2,3),t.df,{v:pfmt(t.p),cls:sigClass(t.p)}],["Cramér's V",fmt(t.cramerV,3),"",""],["N of valid cases",t.N,"",""]])
+    +apa("χ²("+t.df+", N = "+t.N+") = "+fmt(t.chi2,2)+", p "+(t.p<0.001?"< .001":"= "+pfmt(t.p))+", Cramér's V = "+fmt(t.cramerV,2)+". "+(t.p<0.05?"The variables are significantly associated.":"No significant association.")); }
+
+/* graphs launchers */
+function dlgGraph(kind){ var cand=kind==="scatter"?numericVarIdx():numericVarIdx();
+  if(kind==="scatter"){ openDialog("Scatterplot", selHTML("gs-x","X axis",cand)+selHTML("gs-y","Y axis",cand),function(){}); bindRun(function(){ var x=+document.getElementById("gs-x").value,y=+document.getElementById("gs-y").value; var body=outBlock("Scatterplot — "+vars[y].name+" vs "+vars[x].name,"Graphs"); drawScatter(body,num2(colValues(x),colValues(y)),vars[x].name,vars[y].name); }); return; }
+  var lbl=kind==="hist"?"Variable":kind==="box"?"Variable(s) — click to select":"Category variable";
+  var multi=kind==="box"; openDialog(kind==="hist"?"Histogram":kind==="box"?"Boxplot":"Bar chart", pickerHTML("g","Variable"+(multi?"(s)":""),kind==="bar"?allVarIdx():cand,multi),function(){});
+  if(multi){ var getMulti=wireMultiSelect("g-src"); bindRun(function(){ var sel=getMulti(); if(!sel.length){alert("Select a variable.");return false;} var body=outBlock("Boxplot","Graphs"); drawBox(body,sel.map(function(ci){return {label:vars[ci].name,data:num(colValues(ci))};})); }); }
+  else { var get=wireSingleSelect("g-src"); bindRun(function(){ var ci=get(); if(ci===null){alert("Select a variable.");return false;} if(kind==="hist"){ var body=outBlock("Histogram — "+vars[ci].name,"Graphs"); drawHist(body,num(colValues(ci)),vars[ci].name); } else { var f=frequencies(colValues(ci)); var body2=outBlock("Bar chart — "+vars[ci].name,"Graphs"); drawBar(body2,f.rows.map(function(r){return r.value;}),f.rows.map(function(r){return r.count;}),"Count"); } }); } }
+
+function bindRun(fn){ var run=document.getElementById("dlg-run"); var nr=run.cloneNode(true); run.parentNode.replaceChild(nr,run); nr.addEventListener("click",function(){ if(fn()!==false){ document.getElementById("dlg").classList.remove("on"); switchTab("out"); } }); }
+function apa(text){ return '<div class="apa"><b>Summary.</b> '+text+'</div>'; }
+function num2(a,b){ var o=[]; for(var i=0;i<a.length;i++){ if(a[i]===null||a[i]===""||b[i]===null||b[i]==="")continue; var x=+a[i],y=+b[i]; if(isNaN(x)||isNaN(y))continue; o.push([x,y]); } return o; }
+
+/* =================== (5) charts =================== */
+function newCanvas(body,w,h){ var c=document.createElement("canvas"); var dpr=window.devicePixelRatio||1; c.className="chart"; c.width=w*dpr; c.height=h*dpr; c.style.width=w+"px"; c.style.height=h+"px"; var g=c.getContext("2d"); g.scale(dpr,dpr); body.appendChild(c); return {c:c,g:g,w:w,h:h}; }
+function axes(g,w,h,pad){ g.strokeStyle="#3a4353"; g.lineWidth=1; g.beginPath(); g.moveTo(pad,10); g.lineTo(pad,h-pad); g.lineTo(w-10,h-pad); g.stroke(); }
+function drawHist(body,arr,name){ if(!arr.length)return; var o=newCanvas(body,560,300),g=o.g,w=o.w,h=o.h,pad=44;
+  var s=sortNum(arr),mn=s[0],mx=s[s.length-1],k=Math.max(5,Math.min(20,Math.ceil(Math.sqrt(arr.length)))),bw=(mx-mn)/k||1,bins=new Array(k).fill(0);
+  arr.forEach(function(v){ var bi=Math.min(k-1,Math.floor((v-mn)/bw)); bins[bi]++; }); var maxc=Math.max.apply(null,bins);
+  axes(g,w,h,pad); g.fillStyle="#4c8dff"; var pw=(w-10-pad)/k;
+  bins.forEach(function(c,i){ var bh=(h-pad-10)*(c/maxc); g.fillStyle="rgba(76,141,255,.8)"; g.fillRect(pad+i*pw+1,h-pad-bh,pw-2,bh); });
+  // normal overlay
+  var m=mean(arr),sdv=sd(arr); g.strokeStyle="#f2b705"; g.lineWidth=2; g.beginPath();
+  for(var px=0;px<=100;px++){ var xv=mn+(mx-mn)*px/100; var dens=Math.exp(-0.5*Math.pow((xv-m)/sdv,2))/(sdv*Math.sqrt(2*Math.PI)); var yc=dens*arr.length*bw; var X=pad+(xv-mn)/(mx-mn)*(w-10-pad),Y=h-pad-(h-pad-10)*(yc/maxc); px===0?g.moveTo(X,Y):g.lineTo(X,Y); } g.stroke();
+  g.fillStyle="#8f9bb0"; g.font="11px sans-serif"; g.textAlign="center"; g.fillText(name+"  (Mean="+fmt(m,2)+", SD="+fmt(sdv,2)+", N="+arr.length+")",w/2,h-8); g.textAlign="left"; g.fillText("Frequency",6,14); }
+function drawBox(body,groups){ groups=groups.filter(function(x){return x.data&&x.data.length;}); if(!groups.length)return; var o=newCanvas(body,560,300),g=o.g,w=o.w,h=o.h,pad=44;
+  var all=[]; groups.forEach(function(gr){ all=all.concat(gr.data); }); var mn=Math.min.apply(null,all),mx=Math.max.apply(null,all),rng=mx-mn||1; mn-=rng*0.08; mx+=rng*0.08;
+  axes(g,w,h,pad); var Y=function(v){return h-pad-(v-mn)/(mx-mn)*(h-pad-10);}; var bw=(w-10-pad)/groups.length;
+  groups.forEach(function(gr,i){ var s=sortNum(gr.data),q1=percentile(s,0.25),q2=percentile(s,0.5),q3=percentile(s,0.75),iqr=q3-q1,lo=Math.max(s[0],q1-1.5*iqr),hi=Math.min(s[s.length-1],q3+1.5*iqr);
+    var cx=pad+i*bw+bw/2,bx=cx-bw*0.28,bxw=bw*0.56; g.strokeStyle="#6ea8ff"; g.fillStyle="rgba(76,141,255,.22)"; g.lineWidth=1.5;
+    g.beginPath(); g.moveTo(cx,Y(hi)); g.lineTo(cx,Y(q3)); g.moveTo(cx,Y(q1)); g.lineTo(cx,Y(lo)); g.stroke();
+    g.fillRect(bx,Y(q3),bxw,Y(q1)-Y(q3)); g.strokeRect(bx,Y(q3),bxw,Y(q1)-Y(q3));
+    g.strokeStyle="#ffd166"; g.lineWidth=2; g.beginPath(); g.moveTo(bx,Y(q2)); g.lineTo(bx+bxw,Y(q2)); g.stroke();
+    g.strokeStyle="#6ea8ff"; g.lineWidth=1.5; [hi,lo].forEach(function(wv){ g.beginPath(); g.moveTo(cx-bxw*0.3,Y(wv)); g.lineTo(cx+bxw*0.3,Y(wv)); g.stroke(); });
+    g.fillStyle="#8f9bb0"; g.font="11px sans-serif"; g.textAlign="center"; g.fillText(gr.label,cx,h-8); }); g.textAlign="left"; }
+function drawBar(body,labels,values,yl){ if(!labels.length)return; var o=newCanvas(body,560,300),g=o.g,w=o.w,h=o.h,pad=44;
+  var maxc=Math.max.apply(null,values)||1; axes(g,w,h,pad); var bw=(w-10-pad)/labels.length;
+  labels.forEach(function(l,i){ var bh=(h-pad-10)*(values[i]/maxc); g.fillStyle="rgba(110,168,255,.85)"; g.fillRect(pad+i*bw+bw*0.15,h-pad-bh,bw*0.7,bh); g.fillStyle="#8f9bb0"; g.font="11px sans-serif"; g.textAlign="center"; g.fillText(String(l),pad+i*bw+bw/2,h-8); g.fillStyle="#eaf0f7"; g.fillText(values[i],pad+i*bw+bw/2,h-pad-bh-4); }); g.textAlign="left"; g.fillText(yl||"Count",6,14); }
+function drawScatter(body,pts,xl,yl,zeroLine){ if(!pts.length)return; var o=newCanvas(body,560,320),g=o.g,w=o.w,h=o.h,pad=48;
+  var xs=pts.map(function(p){return p[0];}),ys=pts.map(function(p){return p[1];}); var xmn=Math.min.apply(null,xs),xmx=Math.max.apply(null,xs),ymn=Math.min.apply(null,ys),ymx=Math.max.apply(null,ys);
+  var xr=xmx-xmn||1,yr=ymx-ymn||1; xmn-=xr*0.06;xmx+=xr*0.06;ymn-=yr*0.06;ymx+=yr*0.06;
+  axes(g,w,h,pad); var X=function(v){return pad+(v-xmn)/(xmx-xmn)*(w-14-pad);},Y=function(v){return h-pad-(v-ymn)/(ymx-ymn)*(h-pad-14);};
+  if(zeroLine){ g.strokeStyle="#3a4353"; g.setLineDash([4,4]); g.beginPath(); g.moveTo(pad,Y(0)); g.lineTo(w-14,Y(0)); g.stroke(); g.setLineDash([]); }
+  else { // regression line
+    var r=pearson(xs,ys); var mx=mean(xs),my=mean(ys),b1=0,den=0; xs.forEach(function(x,i){b1+=(x-mx)*(ys[i]-my);den+=(x-mx)*(x-mx);}); b1/=den; var b0=my-b1*mx;
+    g.strokeStyle="#f2b705"; g.lineWidth=2; g.beginPath(); g.moveTo(X(xmn),Y(b0+b1*xmn)); g.lineTo(X(xmx),Y(b0+b1*xmx)); g.stroke();
+    g.fillStyle="#f2b705"; g.font="11px sans-serif"; g.fillText("r = "+fmt(r.r,3)+", p "+(r.p<0.001?"< .001":"= "+pfmt(r.p)),pad+8,18); }
+  g.fillStyle="rgba(76,141,255,.75)"; pts.forEach(function(p){ g.beginPath(); g.arc(X(p[0]),Y(p[1]),3.4,0,7); g.fill(); });
+  g.fillStyle="#8f9bb0"; g.font="11px sans-serif"; g.textAlign="center"; g.fillText(xl,w/2,h-8); g.save(); g.translate(12,h/2); g.rotate(-Math.PI/2); g.fillText(yl,0,0); g.restore(); g.textAlign="left"; }
+
+/* =================== menu / tabs / boot =================== */
+function switchTab(which){ var map={data:"view-data",var:"view-var",out:"view-out"};
+  ["data","var","out"].forEach(function(k){ document.getElementById("tab-"+k).setAttribute("aria-selected",k===which?"true":"false"); document.getElementById(map[k]).classList.toggle("on",k===which); }); }
+document.getElementById("tab-data").addEventListener("click",function(){switchTab("data");});
+document.getElementById("tab-var").addEventListener("click",function(){switchTab("var");});
+document.getElementById("tab-out").addEventListener("click",function(){switchTab("out");});
+
+// menu dropdowns
+document.querySelectorAll(".menu>.m>button").forEach(function(b){ b.addEventListener("click",function(e){ e.stopPropagation(); var m=b.parentElement; var open=m.classList.contains("open"); document.querySelectorAll(".menu>.m").forEach(function(x){x.classList.remove("open");}); if(!open)m.classList.add("open"); }); });
+document.addEventListener("click",function(){ document.querySelectorAll(".menu>.m").forEach(function(x){x.classList.remove("open");}); });
+
+var ACTS={ import:function(){document.getElementById("file").click();}, paste:pasteData, "sample-emp":loadEmployee, "sample-clin":loadClinical,
+  addvar:function(){addVar();}, addrow:function(){addRows(5);}, clear:clearAll,
+  descriptives:dlgDescriptives, frequencies:dlgFrequencies, explore:dlgExplore,
+  "ttest-1":dlgOneSampleT, "ttest-ind":dlgIndT, "ttest-pair":dlgPairedT, anova:dlgANOVA,
+  correlate:dlgCorrelate, regression:dlgRegression, crosstabs:dlgCrosstabs,
+  "g-hist":function(){dlgGraph("hist");}, "g-box":function(){dlgGraph("box");}, "g-bar":function(){dlgGraph("bar");}, "g-scatter":function(){dlgGraph("scatter");} };
+document.querySelectorAll("[data-act]").forEach(function(b){ b.addEventListener("click",function(){ var f=ACTS[this.dataset.act]; if(f)f(); }); });
+document.getElementById("file").addEventListener("change",function(){ var f=this.files[0]; if(!f)return; var rd=new FileReader(); rd.onload=function(){parseCSV(rd.result);}; rd.readAsText(f); this.value=""; });
+function pasteData(){ var t=prompt("Paste CSV data (first row = variable names):"); if(t)parseCSV(t); }
+
+document.getElementById("btn-guide").addEventListener("click",function(){document.getElementById("guide").classList.add("on");});
+document.querySelectorAll("[data-close]").forEach(function(b){ b.addEventListener("click",closeModals); });
+document.querySelectorAll(".modal").forEach(function(m){ m.addEventListener("click",function(e){ if(e.target===m)closeModals(); }); });
+document.addEventListener("keydown",function(e){ if(e.key==="Escape")closeModals(); });
+document.getElementById("btn-export").addEventListener("click",exportOutput);
+function exportOutput(){ var out=document.getElementById("out").innerHTML; var css=document.querySelector("style").innerHTML;
+  var html='<!doctype html><meta charset="utf-8"><title>EWI Stat — output</title><style>body{background:#0f1218;color:#eaf0f7;font-family:sans-serif;padding:24px}'+css+'</style><h1>EWI Stat — output report</h1>'+out;
+  var a=document.createElement("a"); a.download="ewi-stat-output.html"; a.href=URL.createObjectURL(new Blob([html],{type:"text/html"})); a.click(); }
+
+/* ---- sample datasets (seeded, reproducible) ---- */
+function seeded(seed){ return function(){ seed=(seed*1103515245+12345)&0x7fffffff; return seed/0x7fffffff; }; }
+function randn(rng){ var u=rng()||1e-9,v=rng()||1e-9; return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v); }
+function loadEmployee(){ clearAll(); var rng=seeded(20260801);
+  vars=[ newVar("id","nominal"), newVar("age","scale"), newVar("tenure","scale"), newVar("salary","scale"),
+    (function(){var v=newVar("dept","nominal"); v.values={1:"Engineering",2:"Sales",3:"Operations"}; return v;})(),
+    (function(){var v=newVar("gender","nominal"); v.values={1:"Female",2:"Male"}; return v;})(),
+    (function(){var v=newVar("satisfaction","ordinal"); v.values={1:"Very low",2:"Low",3:"Neutral",4:"High",5:"Very high"}; return v;})(),
+    newVar("performance","scale") ];
+  data=[]; for(var i=0;i<48;i++){ var age=Math.round(28+randn(rng)*7); var tenure=Math.max(0,Math.round(age-24+randn(rng)*2));
+    var dept=1+(i%3); var gender=1+(i%2);
+    var salary=Math.round(52000+tenure*2600+dept*1500+randn(rng)*6000);
+    var perf=Math.max(1,Math.min(10, 5 + tenure*0.12 + randn(rng)*1.4)); perf=+perf.toFixed(1);
+    var sat=Math.max(1,Math.min(5, Math.round(3 + (perf-5)*0.35 + randn(rng)*0.9)));
+    data.push([i+1, age, tenure, salary, dept, gender, sat, perf]); }
+  renderData(); renderVarView(); switchTab("data"); }
+function loadClinical(){ clearAll(); var rng=seeded(424242);
+  vars=[ newVar("patient","nominal"),
+    (function(){var v=newVar("group","nominal"); v.values={1:"Placebo",2:"Treatment"}; return v;})(),
+    (function(){var v=newVar("sex","nominal"); v.values={1:"Female",2:"Male"}; return v;})(),
+    newVar("baseline_bp","scale"), newVar("followup_bp","scale"), newVar("age","scale"),
+    (function(){var v=newVar("responder","nominal"); v.values={0:"No",1:"Yes"}; return v;})() ];
+  data=[]; for(var i=0;i<60;i++){ var grp=(i<30)?1:2; var sex=1+(i%2); var age=Math.round(55+randn(rng)*10);
+    var base=Math.round(150+randn(rng)*12);
+    var drop=(grp===2? 14: 3) + randn(rng)*6; var follow=Math.round(base-drop);
+    var responder=(base-follow)>=10?1:0;
+    data.push([i+1, grp, sex, base, follow, age, responder]); }
+  renderData(); renderVarView(); switchTab("data"); }
+
+(function boot(){ loadEmployee(); switchTab("data"); })();
+
+/* =================== test hook =================== */
+window.__stat={ lgamma:lgamma, ibeta:ibeta, gammaP:gammaP, normalCDF:normalCDF, normalInv:normalInv,
+  tTail2:tTail2, tCDF:tCDF, fTail:fTail, chi2Tail:chi2Tail,
+  describe:describe, frequencies:frequencies, oneSampleT:oneSampleT, independentT:independentT, pairedT:pairedT,
+  oneWayANOVA:oneWayANOVA, pearson:pearson, spearman:spearman, linReg:linReg, crosstab:crosstab, matInv:matInv,
+  vars:function(){return vars;}, data:function(){return data;}, col:colValues, loadEmployee:loadEmployee, loadClinical:loadClinical,
+  runDescriptives:runDescriptives, runRegression:runRegression, runANOVA:runANOVA, runIndT:runIndT }; 
+</script>
+</body>
+</html>

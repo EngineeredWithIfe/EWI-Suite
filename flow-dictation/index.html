@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flow Dictation — EWI</title>
+<style>
+  :root{--ink:#1d1d1f;--sub:#6e6e73;--hair:#d2d2d7;--panel:#f5f5f7;--blue:#0071e3}
+  *{box-sizing:border-box}
+  body{margin:0;background:#fff;color:var(--ink);
+    font:16px/1.6 -apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;display:flex;min-height:100vh;align-items:center;justify-content:center;padding:40px 22px}
+  .card{max-width:560px;text-align:center}
+  .k{font-size:12px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--sub);margin-bottom:14px}
+  h1{font-size:clamp(34px,6vw,52px);font-weight:700;letter-spacing:-.03em;margin:0 0 14px}
+  p{color:var(--sub);font-size:18px;margin:0 auto 22px;max-width:480px}
+  .cmd{display:inline-block;text-align:left;background:var(--panel);border:1px solid var(--hair);
+    border-radius:14px;padding:16px 18px;font:14px/1.7 "SF Mono",ui-monospace,Menlo,monospace;color:var(--ink);margin-bottom:26px}
+  .cmd b{color:var(--blue);font-weight:600}
+  .back{display:inline-block;color:var(--blue);text-decoration:none;font-size:16px;font-weight:500}
+  .back:hover{text-decoration:underline}
+  .note{font-size:13px;color:var(--sub);margin-top:34px}
+</style></head>
+<body>
+  <div class="card">
+    <div class="k">EWI Suite · Local app</div>
+    <h1>Flow Dictation runs on your Mac</h1>
+    <p>Flow Dictation does real work on your own machine — processing that a static web host
+       can’t (and shouldn’t) do for you. Your data never leaves your device. Start it in
+       one command, then open it locally:</p>
+    <div class="cmd">cd <b>working-samples/02-flow-dictation</b><br>python3 server.py<br><span style="color:var(--sub)"># then open</span> http://localhost:8702</div>
+    <br>
+    <a class="back" href="../">← Back to EWI Home</a>
+    <div class="note">EWI — Engineered With Ife · “Ife” [Yoruba] = “Love” [English]</div>
+  </div>
+  <script src="../ewi-switcher.js" defer></script>
+</body></html>
