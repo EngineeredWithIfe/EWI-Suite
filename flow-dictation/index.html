@@ -3,19 +3,34 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="../ewi-theme.js"></script>
 <title>Flow Dictation — Working Sample</title>
 <style>
   :root{
-    --ink:#1d1d1f; --sub:#6e6e73; --hair:#d2d2d7; --panel:#f5f5f7;
-    --blue:#0071e3; --blue-h:#0077ed; --purple:#8a3ffc; --teal:#00a8a8;
+    --bg:#ffffff; --panel:#f5f5f7; --elev:#eceef3; --hair:#d7d9e0;
+    --ink:#0b0b0c; --sub:#6e6e73; --field:#ffffff;
+    --blue:#0071e3; --blue-h:#0077ed; --accent2:#4aa8ff;
     --green:#008009; --red:#e30000;
-    --grad:linear-gradient(96deg,#8a3ffc 0%,#0071e3 55%,#00a8a8 100%);
+    --header-bg:rgba(245,245,247,.85);
+    --hist-line:#e8e8ed; --danger-bg:#fff2f2; --danger-bd:#ffc9c9;
+    --grad:linear-gradient(96deg,#7ec8ff,#0071e3);
+    --btn-grad:linear-gradient(135deg,#a8d8ff,#ffffff); --btn-text:#04122e;
+  }
+  :root[data-theme="dark"]{
+    --bg:#000000; --panel:#111114; --elev:#1c1f2b; --hair:#2a2a2e;
+    --ink:#f5f5f7; --sub:#98989d; --field:#1c1f2b;
+    --blue:#7ec8ff; --blue-h:#a8d8ff; --accent2:#a8d8ff;
+    --green:#30d158; --red:#ff453a;
+    --header-bg:rgba(17,17,20,.85);
+    --hist-line:#2a2a2e; --danger-bg:#2a1416; --danger-bd:#5a2327;
+    --grad:linear-gradient(96deg,#7ec8ff,#0071e3);
+    --btn-grad:linear-gradient(135deg,#7ec8ff,#ffffff); --btn-text:#04122e;
   }
   *{box-sizing:border-box}
-  body{margin:0;background:#fff;color:var(--ink);
+  body{margin:0;background:var(--bg);color:var(--ink);
        font:15px/1.6 -apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Helvetica,Arial,sans-serif;
-       -webkit-font-smoothing:antialiased}
-  header{position:sticky;top:0;z-index:9;background:rgba(255,255,255,.85);
+       -webkit-font-smoothing:antialiased;transition:background .25s ease,color .25s ease}
+  header{position:sticky;top:0;z-index:9;background:var(--header-bg);
          backdrop-filter:saturate(180%) blur(20px);border-bottom:1px solid var(--hair);
          display:flex;align-items:center;gap:12px;padding:12px max(22px,4vw)}
   header .logo{width:32px;height:32px;border-radius:50%;background:var(--grad);
@@ -34,23 +49,23 @@
   .card h3{font-size:20px;font-weight:600;letter-spacing:-.015em}
   .controls{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
   button{border:none;border-radius:100px;padding:12px 24px;font-size:15px;
-        font-weight:500;cursor:pointer;color:#fff;background:var(--blue);font-family:inherit}
-  button:hover{background:var(--blue-h)}
-  button.rec{background:var(--red)}
-  button.rec:hover{background:#c40000}
-  button.ghost{background:#fff;border:1px solid var(--hair);color:var(--blue);
-        font-weight:500;padding:11px 22px}
-  button.ghost:hover{border-color:var(--blue);background:#fff}
-  select{background:#fff;color:var(--ink);border:1px solid var(--hair);
+        font-weight:500;cursor:pointer;color:var(--btn-text);background:var(--btn-grad);font-family:inherit}
+  button:hover{filter:brightness(.97)}
+  button.rec{background:var(--red);color:#fff;filter:none}
+  button.rec:hover{filter:brightness(.94)}
+  button.ghost{background:var(--field);border:1px solid var(--hair);color:var(--blue);
+        font-weight:500;padding:11px 22px;filter:none}
+  button.ghost:hover{border-color:var(--blue);background:var(--field);filter:brightness(.98)}
+  select{background:var(--field);color:var(--ink);border:1px solid var(--hair);
         border-radius:10px;padding:10px 12px;font-size:14px;font-family:inherit}
   label.tog{display:flex;align-items:center;gap:6px;color:var(--sub);font-size:13.5px;
         cursor:pointer}
-  canvas#wave{width:100%;height:56px;display:block;background:#fff;border:1px solid var(--hair);
+  canvas#wave{width:100%;height:56px;display:block;background:var(--field);border:1px solid var(--hair);
         border-radius:12px;margin-top:16px}
   .hud{display:flex;gap:22px;color:var(--sub);font-size:12.5px;margin-top:12px;
         font-variant-numeric:tabular-nums;flex-wrap:wrap}
-  .hud b{color:var(--purple);font-weight:600}
-  .editor{min-height:220px;background:#fff;border:1px solid var(--hair);
+  .hud b{color:var(--blue);font-weight:600}
+  .editor{min-height:220px;background:var(--field);border:1px solid var(--hair);
         border-radius:14px;padding:18px 20px;font-size:17px;line-height:1.75;
         outline:none;white-space:pre-wrap}
   .editor:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(0,113,227,.15)}
@@ -60,17 +75,17 @@
   .cmds{columns:2;font-size:13.5px;color:var(--sub)}
   .cmds b{color:var(--ink);font-weight:600}
   .dict-row{display:flex;gap:8px;margin-bottom:8px}
-  .dict-row input{flex:1;background:#fff;border:1px solid var(--hair);
+  .dict-row input{flex:1;background:var(--field);border:1px solid var(--hair);
         color:var(--ink);border-radius:10px;padding:10px 12px;font-size:14px;font-family:inherit}
   .dict-row input:focus{outline:none;border-color:var(--blue)}
-  .pill{display:inline-block;background:#fff;border:1px solid var(--hair);
+  .pill{display:inline-block;background:var(--field);border:1px solid var(--hair);
         color:var(--sub);border-radius:100px;padding:4px 14px;font-size:13px;
         margin:3px 4px 0 0}
   .pill button{all:unset;color:var(--red);cursor:pointer;margin-left:6px;font-weight:700}
-  .history-item{border-bottom:1px solid #e8e8ed;padding:10px 0;font-size:14px}
+  .history-item{border-bottom:1px solid var(--hist-line);padding:10px 0;font-size:14px}
   .history-item .t{color:var(--sub);font-size:11.5px;margin-bottom:3px}
   .privacy{font-size:13px;color:var(--sub)}
-  .unsupported{background:#fff2f2;border:1px solid #ffc9c9;color:var(--red);
+  .unsupported{background:var(--danger-bg);border:1px solid var(--danger-bd);color:var(--red);
         border-radius:14px;padding:14px 18px;display:none}
   .foot{color:var(--sub);font-size:12.5px;text-align:center;margin-top:34px}
   .foot .love{color:var(--red)}
@@ -257,7 +272,7 @@
         const y = (buf[i] / 255) * cv.height;
         i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
       }
-      ctx.strokeStyle = "#8b5cf6"; ctx.lineWidth = 2; ctx.stroke();
+      ctx.strokeStyle = "#7ec8ff"; ctx.lineWidth = 2; ctx.stroke();
     })();
   }
   function stopWave() {

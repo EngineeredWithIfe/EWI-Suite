@@ -5,47 +5,81 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>EWI — Engineered With Ife™</title>
 <style>
+  /* ---- Apple-esque theme tokens · Light default, Dark via toggle / OS ---- */
   :root{
-    --ink:#1d1d1f; --sub:#6e6e73; --hair:#d2d2d7; --panel:#f5f5f7;
-    --blue:#0071e3; --purple:#8a3ffc; --teal:#00a8a8; --green:#008009;
-    --orange:#f56300; --red:#e30000; --magenta:#ff2d78; --amber:#e87d0d; --cyan:#00b3ab; --indigo:#4c8dff;
+    --ink:#0b0b0c; --sub:#6e6e73; --hair:#d2d2d7; --panel:#f5f5f7; --bg:#ffffff;
+    --accent:#0071e3;                 /* readable blue for links/labels on light */
+    --baby:#a8d8ff;                   /* signature baby blue */
+    --btn-grad:linear-gradient(135deg,#a8d8ff,#ffffff);
+    --btn-text:#0b0b0c; --btn-ring:rgba(10,132,255,.35);
+    --nav-bg:rgba(255,255,255,.85);
+    --purple:#8a3ffc; --teal:#00a8a8; --green:#008009; --orange:#f56300;
+    --red:#e30000; --magenta:#ff2d78; --amber:#e87d0d; --cyan:#00b3ab; --indigo:#4c8dff;
+    --love-grad:linear-gradient(96deg,#f56300,#e30000);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ink:#f5f5f7; --sub:#98989d; --hair:#2a2a2e; --panel:#111114; --bg:#000000;
+      --accent:#7ec8ff; --baby:#a8d8ff;
+      --purple:#c9a2ff; --teal:#40d0d0; --green:#5fd07a; --orange:#ff9f45;
+      --red:#ff6b6b; --magenta:#ff6fa5; --amber:#ffb454; --cyan:#4fd8d0; --indigo:#8db4ff;
+      --love-grad:linear-gradient(96deg,#ff9f45,#ff5a5f);
+      --btn-grad:linear-gradient(135deg,#7ec8ff,#ffffff); --btn-text:#0b0b0c;
+      --btn-ring:rgba(126,200,255,.4); --nav-bg:rgba(0,0,0,.72);
+    }
+  }
+  :root[data-theme="dark"]{
+    --ink:#f5f5f7; --sub:#98989d; --hair:#2a2a2e; --panel:#111114; --bg:#000000;
+    --accent:#7ec8ff; --baby:#a8d8ff;
+    --purple:#c9a2ff; --teal:#40d0d0; --green:#5fd07a; --orange:#ff9f45;
+    --red:#ff6b6b; --magenta:#ff6fa5; --amber:#ffb454; --cyan:#4fd8d0; --indigo:#8db4ff;
+    --love-grad:linear-gradient(96deg,#ff9f45,#ff5a5f);
+    --btn-grad:linear-gradient(135deg,#7ec8ff,#ffffff); --btn-text:#0b0b0c;
+    --btn-ring:rgba(126,200,255,.4); --nav-bg:rgba(0,0,0,.72);
   }
   *{box-sizing:border-box}
   html{scroll-behavior:smooth}
-  body{margin:0;background:#fff;color:var(--ink);
+  body{margin:0;background:var(--bg);color:var(--ink);
        font:16px/1.6 -apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Helvetica,Arial,sans-serif;
-       -webkit-font-smoothing:antialiased}
-  nav{position:sticky;top:0;z-index:9;background:rgba(255,255,255,.85);
+       -webkit-font-smoothing:antialiased;transition:background .25s ease,color .25s ease}
+  nav{position:sticky;top:0;z-index:9;background:var(--nav-bg);
       backdrop-filter:saturate(180%) blur(20px);border-bottom:1px solid var(--hair)}
   nav .bar{max-width:1024px;margin:0 auto;display:flex;align-items:center;gap:26px;
       padding:13px 22px;font-size:14px}
   nav .brand{font-weight:700;letter-spacing:-.02em;font-size:16px}
   nav a{color:var(--sub);text-decoration:none}
   nav a:hover{color:var(--ink)}
+  nav .spacer{flex:1}
+  .theme-btn{appearance:none;border:1px solid var(--hair);background:transparent;color:var(--ink);
+      font:inherit;font-size:13px;cursor:pointer;border-radius:980px;padding:6px 14px;
+      display:inline-flex;align-items:center;gap:7px;transition:background .2s,border-color .2s}
+  .theme-btn:hover{background:var(--panel)}
+  .theme-btn .dot{width:12px;height:12px;border-radius:50%;background:var(--btn-grad);
+      box-shadow:0 0 0 1px var(--btn-ring)}
   .hero{max-width:900px;margin:0 auto;text-align:center;padding:86px 22px 30px}
   .hero .tm{font-size:14px;color:var(--sub);letter-spacing:.14em;text-transform:uppercase;
       margin-bottom:18px}
   .hero h1{font-size:clamp(44px,7vw,76px);font-weight:700;letter-spacing:-.03em;
       line-height:1.04;margin:0 0 18px}
-  .hero h1 .g1{background:linear-gradient(96deg,#0071e3,#8a3ffc);
-      -webkit-background-clip:text;background-clip:text;color:transparent}
-  .hero h1 .g2{background:linear-gradient(96deg,#f56300,#e30000);
-      -webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero h1 .g1{color:var(--accent)}
+  .hero h1 .g2{background:var(--love-grad);-webkit-background-clip:text;background-clip:text;color:transparent}
   .hero p{color:var(--sub);font-size:20px;max-width:640px;margin:0 auto}
   .hero .ife{margin-top:14px;font-size:15px}
   .hero .ife b{color:var(--red)}
   .grid{max-width:1024px;margin:44px auto 0;padding:0 22px 30px;display:grid;
       grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px}
   .tile{background:var(--panel);border-radius:22px;padding:34px 30px;display:flex;
-      flex-direction:column;min-height:250px}
+      flex-direction:column;min-height:250px;border:1px solid transparent;
+      transition:border-color .2s,transform .2s}
+  .tile:hover{border-color:var(--hair);transform:translateY(-2px)}
   .tile .k{font-size:12px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;
-      margin-bottom:8px}
+      margin-bottom:8px;color:var(--accent)}
   .tile h2{font-size:26px;font-weight:700;letter-spacing:-.02em;margin:0 0 8px}
   .tile p{color:var(--sub);font-size:15px;margin:0 0 18px;flex:1}
   .tile .go{display:flex;gap:14px;flex-wrap:wrap;font-size:15px}
-  .tile .go a{color:var(--blue);text-decoration:none}
+  .tile .go a{color:var(--accent);text-decoration:none}
   .tile .go a:hover{text-decoration:underline}
-  .tile.blue .k{color:var(--blue)} .tile.purple .k{color:var(--purple)}
+  .tile.blue .k{color:var(--accent)} .tile.purple .k{color:var(--purple)}
   .tile.orange .k{color:var(--orange)} .tile.teal .k{color:var(--teal)}
   .tile.green .k{color:var(--green)} .tile.red .k{color:var(--red)}
   .tile.magenta .k{color:var(--magenta)} .tile.amber .k{color:var(--amber)}
@@ -65,6 +99,10 @@
 <nav><div class="bar">
   <span class="brand">EWI</span>
   <a href="#products">Products</a>
+  <span class="spacer"></span>
+  <button class="theme-btn" id="themeToggle" type="button" aria-label="Toggle light or dark mode">
+    <span class="dot" aria-hidden="true"></span><span id="themeLabel">Light</span>
+  </button>
 </div></nav>
 
 <div class="hero">
@@ -206,6 +244,24 @@
 </footer>
 <script src="ewi-switcher.js" defer></script>
 <script>
+  // ---- Theme: honor saved choice, else OS preference; persist on toggle ----
+  (function(){
+    var root=document.documentElement, KEY='ewi-theme';
+    var mq=window.matchMedia('(prefers-color-scheme: dark)');
+    function effective(){ var s=localStorage.getItem(KEY); return s||(mq.matches?'dark':'light'); }
+    function apply(mode){
+      root.setAttribute('data-theme',mode);
+      var lbl=document.getElementById('themeLabel');
+      if(lbl) lbl.textContent = mode==='dark'?'Dark':'Light';
+    }
+    apply(effective());
+    var btn=document.getElementById('themeToggle');
+    if(btn) btn.addEventListener('click',function(){
+      var next=(root.getAttribute('data-theme')==='dark')?'light':'dark';
+      localStorage.setItem(KEY,next); apply(next);
+    });
+    mq.addEventListener&&mq.addEventListener('change',function(){ if(!localStorage.getItem(KEY)) apply(mq.matches?'dark':'light'); });
+  })();
   // Make each product card fully clickable — not just the link inside it.
   document.querySelectorAll('.tile[data-href]').forEach(function(t){
     t.style.cursor='pointer';
