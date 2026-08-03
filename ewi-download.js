@@ -75,8 +75,11 @@
 
   function triggerDownload() {
     // The bundle is committed and served on every host (localhost + public
-    // GitHub Pages), so a single relative download works everywhere.
-    downloadFile(LOCAL_ZIP);
+    // GitHub Pages), so a single relative download works everywhere. Append a
+    // cache-buster so a returning visitor always pulls the NEWEST bytes — the
+    // fix for "I re-downloaded but the app still looks unchanged."
+    var url = LOCAL_ZIP + (LOCAL_ZIP.indexOf("?") < 0 ? "?" : "&") + "t=" + Date.now();
+    downloadFile(url);
   }
 
   function build() {
