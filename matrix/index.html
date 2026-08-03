@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <script src="../ewi-theme.js"></script>
 <title>EWI Matrix — numerical computing workbench</title>
-<meta name="description" content="A MATLAB-style numerical computing environment: a real matrix interpreter with linear algebra, statistics, and 2D/3D plotting — entirely in your browser." />
+<meta name="description" content="A numerical computing environment: a real matrix interpreter with linear algebra, statistics, and 2D/3D plotting — entirely in your browser." />
 <style>
   :root{
     --bg:#0f1216; --panel:#161b22; --panel2:#1b2230; --ink:#e8edf4; --muted:#9aa7b8;
@@ -238,7 +238,7 @@
   <div class="card">
     <button class="x" data-close>Close</button>
     <h2 id="doc-h">EWI Matrix — language reference</h2>
-    <p>A compact MATLAB-style language that runs entirely in your browser. No files leave your Mac.</p>
+    <p>A compact matrix and array language that runs entirely in your browser. No files leave your Mac.</p>
     <h4>Values &amp; construction</h4>
     <p><code>3.14</code>, <code>1e-3</code>, row <code>[1 2 3]</code>, matrix <code>[1 2; 3 4]</code>,
        range <code>1:10</code> or <code>0:0.5:pi</code>, strings <code>'hello'</code>.</p>
@@ -264,7 +264,7 @@
 <script>
 "use strict";
 /* ============================================================================
-   EWI Matrix — a self-contained MATLAB-style numerical engine.
+   EWI Matrix — a self-contained numerical computing engine.
    Pipeline:  tokenize  ->  parse (recursive descent)  ->  evaluate
    Value model:  Mat {r,c,d[]} (row-major)  |  Str {str}
    ========================================================================== */
