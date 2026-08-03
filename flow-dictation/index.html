@@ -1,35 +1,367 @@
 <!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8">
+<html lang="en">
+<head>
+<meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Flow Dictation — EWI</title>
+<title>Flow Dictation — Working Sample</title>
 <style>
-  :root{--ink:#1d1d1f;--sub:#6e6e73;--hair:#d2d2d7;--panel:#f5f5f7;--blue:#0071e3}
+  :root{
+    --ink:#1d1d1f; --sub:#6e6e73; --hair:#d2d2d7; --panel:#f5f5f7;
+    --blue:#0071e3; --blue-h:#0077ed; --purple:#8a3ffc; --teal:#00a8a8;
+    --green:#008009; --red:#e30000;
+    --grad:linear-gradient(96deg,#8a3ffc 0%,#0071e3 55%,#00a8a8 100%);
+  }
   *{box-sizing:border-box}
   body{margin:0;background:#fff;color:var(--ink);
-    font:16px/1.6 -apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Helvetica,Arial,sans-serif;
-    -webkit-font-smoothing:antialiased;display:flex;min-height:100vh;align-items:center;justify-content:center;padding:40px 22px}
-  .card{max-width:560px;text-align:center}
-  .k{font-size:12px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--sub);margin-bottom:14px}
-  h1{font-size:clamp(34px,6vw,52px);font-weight:700;letter-spacing:-.03em;margin:0 0 14px}
-  p{color:var(--sub);font-size:18px;margin:0 auto 22px;max-width:480px}
-  .cmd{display:inline-block;text-align:left;background:var(--panel);border:1px solid var(--hair);
-    border-radius:14px;padding:16px 18px;font:14px/1.7 "SF Mono",ui-monospace,Menlo,monospace;color:var(--ink);margin-bottom:26px}
-  .cmd b{color:var(--blue);font-weight:600}
-  .back{display:inline-block;color:var(--blue);text-decoration:none;font-size:16px;font-weight:500}
-  .back:hover{text-decoration:underline}
-  .note{font-size:13px;color:var(--sub);margin-top:34px}
-</style></head>
+       font:15px/1.6 -apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Helvetica,Arial,sans-serif;
+       -webkit-font-smoothing:antialiased}
+  header{position:sticky;top:0;z-index:9;background:rgba(255,255,255,.85);
+         backdrop-filter:saturate(180%) blur(20px);border-bottom:1px solid var(--hair);
+         display:flex;align-items:center;gap:12px;padding:12px max(22px,4vw)}
+  header .logo{width:32px;height:32px;border-radius:50%;background:var(--grad);
+         display:grid;place-items:center;font-size:15px}
+  header h1{font-size:17px;font-weight:600;letter-spacing:-.01em;margin:0}
+  header .sub{color:var(--sub);font-size:12px}
+  .hero{max-width:980px;margin:0 auto;padding:50px 22px 6px;text-align:center}
+  .hero h2{font-size:clamp(32px,4.6vw,48px);font-weight:700;letter-spacing:-.025em;
+           line-height:1.08;margin:0 0 10px}
+  .hero h2 .grad{background:var(--grad);-webkit-background-clip:text;
+           background-clip:text;color:transparent}
+  .hero p{color:var(--sub);font-size:17px;max-width:600px;margin:0 auto}
+  main{max-width:980px;margin:0 auto;padding:26px 22px 70px}
+  .card{background:var(--panel);border:none;border-radius:18px;
+        padding:24px 26px;margin-bottom:20px}
+  .card h3{font-size:20px;font-weight:600;letter-spacing:-.015em}
+  .controls{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+  button{border:none;border-radius:100px;padding:12px 24px;font-size:15px;
+        font-weight:500;cursor:pointer;color:#fff;background:var(--blue);font-family:inherit}
+  button:hover{background:var(--blue-h)}
+  button.rec{background:var(--red)}
+  button.rec:hover{background:#c40000}
+  button.ghost{background:#fff;border:1px solid var(--hair);color:var(--blue);
+        font-weight:500;padding:11px 22px}
+  button.ghost:hover{border-color:var(--blue);background:#fff}
+  select{background:#fff;color:var(--ink);border:1px solid var(--hair);
+        border-radius:10px;padding:10px 12px;font-size:14px;font-family:inherit}
+  label.tog{display:flex;align-items:center;gap:6px;color:var(--sub);font-size:13.5px;
+        cursor:pointer}
+  canvas#wave{width:100%;height:56px;display:block;background:#fff;border:1px solid var(--hair);
+        border-radius:12px;margin-top:16px}
+  .hud{display:flex;gap:22px;color:var(--sub);font-size:12.5px;margin-top:12px;
+        font-variant-numeric:tabular-nums;flex-wrap:wrap}
+  .hud b{color:var(--purple);font-weight:600}
+  .editor{min-height:220px;background:#fff;border:1px solid var(--hair);
+        border-radius:14px;padding:18px 20px;font-size:17px;line-height:1.75;
+        outline:none;white-space:pre-wrap}
+  .editor:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(0,113,227,.15)}
+  .partial{color:var(--sub);font-style:italic}
+  .meta-row{display:flex;justify-content:space-between;align-items:center;
+        color:var(--sub);font-size:12.5px;margin-top:10px}
+  .cmds{columns:2;font-size:13.5px;color:var(--sub)}
+  .cmds b{color:var(--ink);font-weight:600}
+  .dict-row{display:flex;gap:8px;margin-bottom:8px}
+  .dict-row input{flex:1;background:#fff;border:1px solid var(--hair);
+        color:var(--ink);border-radius:10px;padding:10px 12px;font-size:14px;font-family:inherit}
+  .dict-row input:focus{outline:none;border-color:var(--blue)}
+  .pill{display:inline-block;background:#fff;border:1px solid var(--hair);
+        color:var(--sub);border-radius:100px;padding:4px 14px;font-size:13px;
+        margin:3px 4px 0 0}
+  .pill button{all:unset;color:var(--red);cursor:pointer;margin-left:6px;font-weight:700}
+  .history-item{border-bottom:1px solid #e8e8ed;padding:10px 0;font-size:14px}
+  .history-item .t{color:var(--sub);font-size:11.5px;margin-bottom:3px}
+  .privacy{font-size:13px;color:var(--sub)}
+  .unsupported{background:#fff2f2;border:1px solid #ffc9c9;color:var(--red);
+        border-radius:14px;padding:14px 18px;display:none}
+  .foot{color:var(--sub);font-size:12.5px;text-align:center;margin-top:34px}
+  .foot .love{color:var(--red)}
+</style>
+</head>
 <body>
-  <div class="card">
-    <div class="k">EWI Suite · Local app</div>
-    <h1>Flow Dictation runs on your Mac</h1>
-    <p>Flow Dictation does real work on your own machine — processing that a static web host
-       can’t (and shouldn’t) do for you. Your data never leaves your device. Start it in
-       one command, then open it locally:</p>
-    <div class="cmd">cd <b>working-samples/02-flow-dictation</b><br>python3 server.py<br><span style="color:var(--sub)"># then open</span> http://localhost:8702</div>
-    <br>
-    <a class="back" href="../">← Back to EWI Home</a>
-    <div class="note">EWI — Engineered With Ife · “Ife” [Yoruba] = “Love” [English]</div>
+<header>
+  <div class="logo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2.5" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0012 0M12 17v4M9 21h6"/></svg></div>
+  <div>
+    <h1>Flow Dictation</h1>
+    <div class="sub">An EWI working sample — Engineered With Ife™</div>
   </div>
-  <script src="../ewi-switcher.js" defer></script>
-</body></html>
+</header>
+
+<div class="hero">
+  <h2>Don't type it. <span class="grad">Say it.</span></h2>
+  <p>Streaming speech-to-text with a real formatting layer — spoken punctuation, tone
+     rewrite, a personal dictionary — all captured right in your browser.</p>
+</div>
+
+<main>
+  <div class="unsupported" id="unsupported">
+    This browser doesn't expose the Web Speech API. Open this page in
+    <b>Google Chrome</b> (or Edge) — no installs needed.
+  </div>
+
+  <div class="card">
+    <div class="controls">
+      <button id="mic">Start Dictating</button>
+      <select id="tone" title="Tone / formatting mode">
+        <option value="default">Tone: Default</option>
+        <option value="professional">Tone: Professional</option>
+        <option value="casual">Tone: Casual</option>
+      </select>
+      <label class="tog"><input type="checkbox" id="fillers" checked> Remove fillers (um, uh…)</label>
+      <label class="tog"><input type="checkbox" id="autocap" checked> Auto-capitalize</label>
+      <button class="ghost" id="copy">Copy</button>
+      <button class="ghost" id="save">Save note</button>
+      <button class="ghost" id="clear">Clear</button>
+    </div>
+    <canvas id="wave" width="1200" height="112"></canvas>
+    <div class="hud">
+      <span>state <b id="hud-state">idle</b></span>
+      <span>first partial <b id="hud-latency">—</b></span>
+      <span>words <b id="hud-words">0</b></span>
+      <span>engine <b>in-browser capture · browser ASR</b></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="editor" id="editor" contenteditable="true"
+         aria-label="Dictation output editor" spellcheck="true"></div>
+    <div class="meta-row">
+      <span>Click anywhere in the text to edit by hand — dictation appends at the end.</span>
+      <span id="charcount">0 chars</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin:0 0 10px">Voice commands (the formatting layer)</h3>
+    <div class="cmds">
+      <div><b>“period”</b> → . &nbsp; <b>“comma”</b> → , &nbsp; <b>“question mark”</b> → ?</div>
+      <div><b>“exclamation mark”</b> → ! &nbsp; <b>“colon”</b> → : &nbsp; <b>“semicolon”</b> → ;</div>
+      <div><b>“new line”</b> → line break &nbsp; <b>“new paragraph”</b> → blank line</div>
+      <div><b>“open quote” / “close quote”</b> → “ ” &nbsp; <b>“dash”</b> → —</div>
+      <div><b>“scratch that”</b> → deletes the last sentence</div>
+      <div><b>“all caps [word]”</b>… handled by dictionary rules below</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin:0 0 10px">Personal dictionary <span style="color:var(--muted);font-size:12px;font-weight:400">(auto-replace as you speak — persisted locally)</span></h3>
+    <div class="dict-row">
+      <input id="dict-from" placeholder="heard as… e.g. navlink">
+      <input id="dict-to" placeholder="replace with… e.g. NAVLINQ">
+      <button class="ghost" id="dict-add">Add</button>
+    </div>
+    <div id="dict-list"></div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin:0 0 10px">Saved notes</h3>
+    <div id="history"><span style="color:var(--muted);font-size:13px">Nothing saved yet.</span></div>
+  </div>
+
+  <div class="card">
+    <p class="privacy" style="margin:0">Privacy (Dossier 2 §9): microphone audio is captured only
+    while the button is red; the waveform is rendered locally; the personal dictionary and notes
+    live in <code>localStorage</code> in your browser. Nothing is uploaded by this page.</p>
+  </div>
+
+  <p class="foot">Flow Dictation · part of the EWI family — Engineered With Ife™ · “Ife” [Yoruba] = <span class="love">“Love”</span> [English]</p>
+</main>
+
+<script>
+(() => {
+  const $ = s => document.querySelector(s);
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { $("#unsupported").style.display = "block"; }
+
+  // ---------------- state ----------------
+  let rec = null, listening = false, sessionStart = 0, firstPartialAt = null;
+  let audioCtx = null, analyser = null, rafId = 0, mediaStream = null;
+  let finalText = "";      // committed text
+  let dict = JSON.parse(localStorage.getItem("flow.dict") || "[]");
+  let notes = JSON.parse(localStorage.getItem("flow.notes") || "[]");
+
+  // ---------------- formatting layer ----------------
+  const PUNCT = [
+    [/\b(full stop|period)\b/gi, "."], [/\bcomma\b/gi, ","],
+    [/\bquestion mark\b/gi, "?"], [/\bexclamation (mark|point)\b/gi, "!"],
+    [/\bsemicolon\b/gi, ";"], [/\bcolon\b/gi, ":"],
+    [/\bopen quote\b/gi, "“"], [/\bclose quote\b/gi, "”"],
+    [/\bnew paragraph\b/gi, "\n\n"], [/\bnew line\b/gi, "\n"],
+    [/\bdash\b/gi, " —"],
+  ];
+  const FILLERS = /\b(um+|uh+|erm+|you know,?|i mean,?|like,)\s*/gi;
+  const TONES = {
+    default: t => t,
+    professional: t => t
+      .replace(/\bgonna\b/gi, "going to").replace(/\bwanna\b/gi, "want to")
+      .replace(/\bgotta\b/gi, "have to").replace(/\bkinda\b/gi, "somewhat")
+      .replace(/\byeah\b/gi, "yes").replace(/\bnope?\b/gi, "no"),
+    casual: t => t
+      .replace(/\btherefore\b/gi, "so").replace(/\bhowever\b/gi, "but")
+      .replace(/\butilize\b/gi, "use"),
+  };
+
+  function format(raw, {isFinal}) {
+    let t = " " + raw.trim() + " ";
+    // scratch that — delete last sentence
+    if (isFinal && /\bscratch that\b/i.test(t)) {
+      finalText = finalText.replace(/(^|[.!?]\s+)[^.!?]*[.!?]?\s*$/, "$1");
+      return "";
+    }
+    for (const [re, rep] of PUNCT) t = t.replace(re, rep);
+    if ($("#fillers").checked) t = t.replace(FILLERS, "");
+    for (const {from, to} of dict)
+      t = t.replace(new RegExp("\\b" + from.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b", "gi"), to);
+    t = TONES[$("#tone").value](t);
+    t = t.replace(/\s+([.,!?;:])/g, "$1")        // no space before punctuation
+         .replace(/([.,!?;:])(?=\S)/g, "$1 ")    // space after punctuation
+         .replace(/[ \t]+/g, " ").replace(/ ?\n ?/g, "\n");
+    if ($("#autocap").checked) {
+      const tail = (finalText.trim().slice(-1) || ".");
+      if (/[.!?\n]/.test(tail) || finalText.trim() === "")
+        t = t.replace(/^\s*([a-z])/, m => m.toUpperCase());
+      t = t.replace(/([.!?]\s+)([a-z])/g, (m, a, b) => a + b.toUpperCase())
+           .replace(/\bi\b/g, "I");
+    }
+    return t.replace(/^ (?=\S)/, finalText && !/[\s\n]$/.test(finalText) ? " " : "");
+  }
+
+  // ---------------- render ----------------
+  function render(partial) {
+    const ed = $("#editor");
+    ed.innerHTML = escapeHtml(finalText) +
+      (partial ? `<span class="partial"> ${escapeHtml(partial)}</span>` : "");
+    $("#charcount").textContent = finalText.length + " chars";
+    $("#hud-words").textContent = (finalText.trim().match(/\S+/g) || []).length;
+    ed.scrollTop = ed.scrollHeight;
+  }
+  function escapeHtml(s) {
+    return s.replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]))
+            .replace(/\n/g, "<br>");
+  }
+
+  // ---------------- waveform ----------------
+  async function startWave() {
+    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioCtx = new AudioContext();
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 512;
+    audioCtx.createMediaStreamSource(mediaStream).connect(analyser);
+    const cv = $("#wave"), ctx = cv.getContext("2d");
+    const buf = new Uint8Array(analyser.frequencyBinCount);
+    (function draw() {
+      rafId = requestAnimationFrame(draw);
+      analyser.getByteTimeDomainData(buf);
+      ctx.clearRect(0, 0, cv.width, cv.height);
+      ctx.beginPath();
+      for (let i = 0; i < buf.length; i++) {
+        const x = (i / buf.length) * cv.width;
+        const y = (buf[i] / 255) * cv.height;
+        i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+      }
+      ctx.strokeStyle = "#8b5cf6"; ctx.lineWidth = 2; ctx.stroke();
+    })();
+  }
+  function stopWave() {
+    cancelAnimationFrame(rafId);
+    if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
+    if (audioCtx) audioCtx.close();
+    const cv = $("#wave");
+    cv.getContext("2d").clearRect(0, 0, cv.width, cv.height);
+  }
+
+  // ---------------- speech recognition ----------------
+  function start() {
+    rec = new SR();
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.lang = "en-US";
+    sessionStart = performance.now();
+    firstPartialAt = null;
+    rec.onresult = (ev) => {
+      let interim = "";
+      if (firstPartialAt === null) {
+        firstPartialAt = performance.now() - sessionStart;
+        $("#hud-latency").textContent = Math.round(firstPartialAt) + " ms";
+      }
+      for (let i = ev.resultIndex; i < ev.results.length; i++) {
+        const r = ev.results[i];
+        if (r.isFinal) finalText += format(r[0].transcript, { isFinal: true });
+        else interim += r[0].transcript;
+      }
+      render(interim ? format(interim, { isFinal: false }) : "");
+    };
+    rec.onerror = (e) => {
+      $("#hud-state").textContent = "error: " + e.error;
+      if (e.error === "not-allowed") stop();
+    };
+    rec.onend = () => { if (listening) rec.start(); }; // auto-restart (continuous)
+    rec.start();
+    listening = true;
+    $("#mic").textContent = "Stop (listening…)";
+    $("#mic").classList.add("rec");
+    $("#hud-state").textContent = "listening";
+    startWave().catch(() => {});
+  }
+  function stop() {
+    listening = false;
+    if (rec) rec.stop();
+    stopWave();
+    $("#mic").textContent = "Start Dictating";
+    $("#mic").classList.remove("rec");
+    $("#hud-state").textContent = "idle";
+    render("");
+  }
+  $("#mic").addEventListener("click", () => listening ? stop() : SR && start());
+
+  // ---------------- editor sync / actions ----------------
+  $("#editor").addEventListener("input", () => {
+    finalText = $("#editor").innerText;
+    $("#charcount").textContent = finalText.length + " chars";
+  });
+  $("#copy").addEventListener("click", async () => {
+    await navigator.clipboard.writeText(finalText);
+    $("#copy").textContent = "Copied ✓";
+    setTimeout(() => $("#copy").textContent = "Copy", 1200);
+  });
+  $("#clear").addEventListener("click", () => { finalText = ""; render(""); });
+  $("#save").addEventListener("click", () => {
+    if (!finalText.trim()) return;
+    notes.unshift({ t: new Date().toLocaleString(), text: finalText.trim() });
+    notes = notes.slice(0, 25);
+    localStorage.setItem("flow.notes", JSON.stringify(notes));
+    renderNotes();
+  });
+
+  // ---------------- dictionary ----------------
+  function renderDict() {
+    $("#dict-list").innerHTML = dict.map((d, i) =>
+      `<span class="pill">${d.from} → ${d.to}<button data-i="${i}">✕</button></span>`).join("")
+      || `<span style="color:var(--muted);font-size:12px">No rules yet.</span>`;
+    $("#dict-list").querySelectorAll("button").forEach(b =>
+      b.addEventListener("click", () => {
+        dict.splice(Number(b.dataset.i), 1);
+        localStorage.setItem("flow.dict", JSON.stringify(dict));
+        renderDict();
+      }));
+  }
+  $("#dict-add").addEventListener("click", () => {
+    const from = $("#dict-from").value.trim(), to = $("#dict-to").value.trim();
+    if (!from || !to) return;
+    dict.push({ from, to });
+    localStorage.setItem("flow.dict", JSON.stringify(dict));
+    $("#dict-from").value = $("#dict-to").value = "";
+    renderDict();
+  });
+
+  // ---------------- notes ----------------
+  function renderNotes() {
+    $("#history").innerHTML = notes.length ? notes.map(n =>
+      `<div class="history-item"><div class="t">${n.t}</div>${escapeHtml(n.text).slice(0, 400)}</div>`
+    ).join("") : `<span style="color:var(--muted);font-size:13px">Nothing saved yet.</span>`;
+  }
+
+  renderDict(); renderNotes(); render("");
+})();
+</script>
+<script src="../ewi-switcher.js" defer></script>
+</body>
+</html>

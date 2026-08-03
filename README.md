@@ -1,14 +1,15 @@
 # EWI Suite — Public Web
 
 The public, static build of the **EWI Suite** — Engineered With Ife.
-Six products run fully live in any browser; the rest are local-first apps
-that do real work on your own machine and link to a one-command start page.
+Seven products run fully live in any browser; the rest are engine-backed
+apps that do real work (live data, media and on-device AI) and ship with a
+product page that starts their engine in one command.
 
 ## What's live in the browser
 
-Cosmos · Matrix · Forge · Cut · Grid · Stat — 100% client-side, no server.
+Cosmos · Matrix · Forge · Cut · Grid · Stat · Flow Dictation — 100% client-side, no server.
 
-## Deploy to GitHub Pages (engineeredwithife)
+## Deploy to GitHub Pages (EngineeredWithIfe)
 
 ```bash
 # 1. From this folder (ewi-suite-web), initialise the repo
@@ -17,9 +18,9 @@ git init -b main
 git add -A
 git commit -m "EWI Suite public web"
 
-# 2. Create the repo on github.com/engineeredwithife (name it e.g. ewi-suite)
+# 2. Create the repo on github.com/EngineeredWithIfe (e.g. EWI-Suite)
 #    then point this folder at it:
-git remote add origin https://github.com/engineeredwithife/ewi-suite.git
+git remote add origin https://github.com/EngineeredWithIfe/EWI-Suite.git
 git push -u origin main
 
 # 3. On GitHub: Settings -> Pages -> Build and deployment
@@ -28,7 +29,7 @@ git push -u origin main
 
 Your site goes live at:
 
-    https://engineeredwithife.github.io/ewi-suite/
+    https://engineeredwithife.github.io/EWI-Suite/
 
 (Every internal link is site-relative, so the exact repo name doesn't matter —
 rename it and the whole suite still resolves.)

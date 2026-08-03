@@ -8,26 +8,29 @@
   body{margin:0;background:#fff;color:var(--ink);
     font:16px/1.6 -apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Helvetica,Arial,sans-serif;
     -webkit-font-smoothing:antialiased;display:flex;min-height:100vh;align-items:center;justify-content:center;padding:40px 22px}
-  .card{max-width:560px;text-align:center}
+  .card{max-width:600px;text-align:center}
   .k{font-size:12px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--sub);margin-bottom:14px}
   h1{font-size:clamp(34px,6vw,52px);font-weight:700;letter-spacing:-.03em;margin:0 0 14px}
-  p{color:var(--sub);font-size:18px;margin:0 auto 22px;max-width:480px}
+  p{color:var(--sub);font-size:18px;margin:0 auto 22px;max-width:520px}
   .cmd{display:inline-block;text-align:left;background:var(--panel);border:1px solid var(--hair);
-    border-radius:14px;padding:16px 18px;font:14px/1.7 "SF Mono",ui-monospace,Menlo,monospace;color:var(--ink);margin-bottom:26px}
+    border-radius:14px;padding:16px 18px;font:14px/1.7 "SF Mono",ui-monospace,Menlo,monospace;color:var(--ink);margin-bottom:22px}
   .cmd b{color:var(--blue);font-weight:600}
+  .tiny{font-size:13.5px;color:var(--sub);max-width:520px;margin:0 auto 26px}
   .back{display:inline-block;color:var(--blue);text-decoration:none;font-size:16px;font-weight:500}
   .back:hover{text-decoration:underline}
   .note{font-size:13px;color:var(--sub);margin-top:34px}
 </style></head>
 <body>
   <div class="card">
-    <div class="k">EWI Suite · Local app</div>
-    <h1>Browser Cloud runs on your Mac</h1>
-    <p>Browser Cloud does real work on your own machine — processing that a static web host
-       can’t (and shouldn’t) do for you. Your data never leaves your device. Start it in
-       one command, then open it locally:</p>
-    <div class="cmd">cd <b>working-samples/01-browser-cloud</b><br>python3 server.py<br><span style="color:var(--sub)"># then open</span> http://localhost:8701</div>
-    <br>
+    <div class="k">EWI Suite · Full application</div>
+    <h1>Browser Cloud</h1>
+    <p>A real, automatable browser you can drive programmatically — navigate, capture and script the open web.</p>
+    <details style="margin:0 auto 8px;max-width:520px;text-align:left">
+      <summary style="cursor:pointer;color:var(--blue);font-weight:500;font-size:15px;list-style:none">Run the Browser Cloud engine</summary>
+      <div class="cmd" style="margin-top:12px">cd <b>working-samples/01-browser-cloud</b><br>python3 server.py<br><span style="color:var(--sub)"># then open</span> http://localhost:8701</div>
+    </details>
+    <p class="tiny">Browser Cloud does real processing (live data, media and on-device AI) that a
+       static page can’t perform on its own. Run the engine above to use every feature.</p>
     <a class="back" href="../">← Back to EWI Home</a>
     <div class="note">EWI — Engineered With Ife · “Ife” [Yoruba] = “Love” [English]</div>
   </div>

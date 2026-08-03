@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>EWI Cut — timeline video editor</title>
-<meta name="description" content="A CapCut-style editor: layer photos, video, text and audio on a multi-track timeline, trim and split, add transitions, filters, Ken Burns and animated titles, then export a high-quality video — all on your Mac." />
+<meta name="description" content="A CapCut-style editor: layer photos, video, text and audio on a multi-track timeline, trim and split, add transitions, filters, Ken Burns and animated titles, then export a high-quality MP4 video — all in your browser." />
 <style>
   :root{
     --bg:#0f1115; --panel:#171a20; --panel2:#1e222a; --ink:#eef2f7; --muted:#93a0b0;
@@ -208,7 +208,7 @@
   <div class="card">
     <button class="x" data-close>Close</button>
     <h2 id="hh">EWI Cut — guide</h2>
-    <p>A compact CapCut-style editor. Everything runs on your Mac; nothing is uploaded.</p>
+    <p>A compact CapCut-style editor. Everything runs in your browser; nothing is uploaded.</p>
     <h4>Build</h4>
     <p><b>Import</b> photos, video or audio (or generate a <b>Title</b>, <b>Color card</b>, or <b>Tone</b>).
        Click a pool item to drop it on the timeline at the playhead.</p>
@@ -219,7 +219,7 @@
     <p>The <b>Inspector</b> controls position, scale, rotation, opacity, <b>fade in/out</b>, speed, volume,
        brightness/contrast/saturation, and <b>Ken Burns</b> zoom for photos. Titles have font, colour, and an animation.</p>
     <h4>Export</h4>
-    <p><b>Export video</b> plays the timeline once and records a high-quality WebM (video + mixed audio).
+    <p><b>Export video</b> plays the timeline once and records a high-quality MP4 (H.264 video + mixed AAC audio).
        <b>Save frame</b> captures the current preview as a PNG.</p>
     <h4>Keyboard</h4>
     <p><kbd>Space</kbd> play/pause · <kbd>S</kbd> split · <kbd>D</kbd> duplicate · <kbd>X</kbd>/<kbd>Delete</kbd> delete · <kbd>←</kbd>/<kbd>→</kbd> step.</p>
@@ -588,21 +588,23 @@ function exportVideo(){
   ensureAudio(); if(actx&&actx.state==="suspended") actx.resume();
   var stream=pcv.captureStream(project.fps);
   if(dest&&dest.stream.getAudioTracks().length) dest.stream.getAudioTracks().forEach(function(tr){ stream.addTrack(tr); });
-  var mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")?"video/webm;codecs=vp9,opus":
-             MediaRecorder.isTypeSupported("video/webm;codecs=vp8,opus")?"video/webm;codecs=vp8,opus":"video/webm";
+  var mp4s=["video/mp4;codecs=avc1.640028,mp4a.40.2","video/mp4;codecs=avc1.640028","video/mp4;codecs=avc1.42E01E,mp4a.40.2","video/mp4"];
+  var mime=null; for(var mi=0;mi<mp4s.length;mi++){ if(window.MediaRecorder&&MediaRecorder.isTypeSupported(mp4s[mi])){ mime=mp4s[mi]; break; } }
+  if(!mime){ alert("MP4 recording isn\u2019t available here. Please use a current Safari, Chrome or Edge."); return; }
   var chunks=[], rec;
-  try{ rec=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:8_000_000}); }catch(e){ rec=new MediaRecorder(stream); }
+  try{ rec=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:12_000_000}); }catch(e){ alert("MP4 recording isn\u2019t available in this browser."); return; }
   rec.ondataavailable=function(ev){ if(ev.data.size) chunks.push(ev.data); };
-  rec.onstop=function(){ var blob=new Blob(chunks,{type:"video/webm"}); var a=document.createElement("a"); a.download="ewi-cut-export.webm"; a.href=URL.createObjectURL(blob); a.click(); setTimeout(function(){URL.revokeObjectURL(a.href);},3000);
+  rec.onstop=function(){ var blob=new Blob(chunks,{type:"video/mp4"}); var a=document.createElement("a"); a.download="ewi-cut-export.mp4"; a.href=URL.createObjectURL(blob); a.click(); setTimeout(function(){URL.revokeObjectURL(a.href);},3000);
     document.getElementById("rec").classList.remove("on"); };
   var recEl=document.getElementById("rec"); recEl.classList.add("on");
   curTime=0; render(0); rec.start(120);
   playing=true; lastTs=performance.now();
+  var exFps=project.fps||30;
   function step(ts){ if(!playing){ return; } var dt=(ts-lastTs)/1000; lastTs=ts; curTime+=dt;
     document.getElementById("rec-t").textContent="Recording… "+curTime.toFixed(1)+"s";
     if(curTime>=projDuration()){ render(projDuration()); syncVideoElements(projDuration(),false); playing=false; setTimeout(function(){rec.stop();},120); pause(); return; }
-    syncVideoElements(curTime,true); render(curTime); requestAnimationFrame(step); }
-  requestAnimationFrame(step);
+    syncVideoElements(curTime,true); render(curTime); setTimeout(function(){ step(performance.now()); }, Math.max(8,1000/exFps)); }
+  step(performance.now());
 }
 
 /* ---------- modal ---------- */

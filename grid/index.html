@@ -104,6 +104,33 @@
   }
   .stage-foot .kbd { border: 1px solid var(--line-2); border-bottom-width: 2px; border-radius: 6px; padding: 1px 6px; color: var(--text); background: var(--bg-3); font-size: 11.5px; }
 
+  /* ---------- Media-area view pan ---------- */
+  .view-ctl { display: flex; align-items: center; gap: 9px; }
+  .viewpad { display: inline-grid; grid-template-columns: repeat(3, 20px); grid-template-rows: repeat(3, 20px); gap: 2px; }
+  .viewpad button { width: 20px; height: 20px; padding: 0; display: grid; place-items: center; border: 1px solid var(--line-2); background: var(--bg-3); color: var(--text); border-radius: 5px; cursor: pointer; font-size: 10px; line-height: 1; }
+  .viewpad button:hover { background: var(--bg-4); }
+  .viewpad .vp-c { border-style: dashed; color: var(--muted); }
+  .viewpad .vp-blank { visibility: hidden; pointer-events: none; }
+  .view-ctl .vz { width: 84px; }
+  #stage.vpan { cursor: move; }
+
+  /* ---------- Audio panel ---------- */
+  .aud-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .aud-chk { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text); cursor: pointer; margin-bottom: 10px; }
+  .aud-chk input { width: auto; accent-color: var(--accent); }
+  .aud-card { background: var(--bg-3); border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin-top: 8px; }
+  .aud-name { font-size: 12.5px; color: var(--text); font-weight: 600; display: flex; justify-content: space-between; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .aud-name .dur { color: var(--muted); font-weight: 500; font-size: 11.5px; }
+  .aud-sel-inline { margin-top: 8px; }
+
+  /* ---------- Trim scrubber ---------- */
+  .trim { position: relative; height: 46px; background: var(--bg-4); border: 1px solid var(--line-2); border-radius: 8px; overflow: hidden; touch-action: none; user-select: none; }
+  .trim canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .trim .sel { position: absolute; top: 0; bottom: 0; background: rgba(108,124,255,.18); border-left: 2px solid var(--accent); border-right: 2px solid var(--accent); pointer-events: none; }
+  .trim .h { position: absolute; top: 0; bottom: 0; width: 16px; margin-left: -8px; cursor: ew-resize; z-index: 2; }
+  .trim .h::after { content: ""; position: absolute; left: 7px; top: 7px; bottom: 7px; width: 2px; background: var(--accent); border-radius: 2px; box-shadow: 0 0 0 1px rgba(0,0,0,.3); }
+  .trim-times { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: 6px; }
+
   /* ---------- Controls ---------- */
   label.field { display: block; margin-bottom: 12px; }
   label.field > span { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-bottom: 5px; }
@@ -229,9 +256,23 @@
     </div>
     <div class="stage-foot">
       <span><span class="kbd">Drag</span> pan tile</span>
-      <span><span class="kbd">Scroll</span> / <span class="kbd">Pinch</span> zoom</span>
-      <span><span class="kbd">Double-click</span> replace tile</span>
-      <span><span class="kbd">Drag between tiles</span> swap</span>
+      <span><span class="kbd">Scroll</span> zoom</span>
+      <span><span class="kbd">Shift+Drag</span> pan view</span>
+      <span><span class="kbd">Double-click</span> replace</span>
+      <span class="view-ctl" aria-label="Pan the media view"><span class="muted">View</span>
+        <span class="viewpad" role="group">
+          <button class="vp-blank" tabindex="-1" aria-hidden="true"></button>
+          <button data-vp="up" title="Reveal top" aria-label="Pan view up">▲</button>
+          <button class="vp-blank" tabindex="-1" aria-hidden="true"></button>
+          <button data-vp="left" title="Reveal left" aria-label="Pan view left">◀</button>
+          <button class="vp-c" data-vp="reset" title="Reset view" aria-label="Reset view">◎</button>
+          <button data-vp="right" title="Reveal right" aria-label="Pan view right">▶</button>
+          <button class="vp-blank" tabindex="-1" aria-hidden="true"></button>
+          <button data-vp="down" title="Reveal bottom" aria-label="Pan view down">▼</button>
+          <button class="vp-blank" tabindex="-1" aria-hidden="true"></button>
+        </span>
+        <input type="range" class="vz" id="viewZoom" min="0.4" max="2.5" step="0.01" value="1" title="View zoom" aria-label="View zoom" />
+      </span>
       <span class="spacer" style="flex:1"></span>
       <span id="cellCount" class="muted"></span>
     </div>
@@ -268,6 +309,48 @@
         <button class="btn sm ghost" id="centerBtn">Center</button>
         <button class="btn sm ghost" id="clearCellBtn">Remove media</button>
       </div>
+      <div id="cellVideoCtl" hidden style="margin-top:12px;border-top:1px solid var(--line);padding-top:12px">
+        <label class="field">
+          <span>Clip starts at <b id="startVal">0.0s</b></span>
+          <input type="range" id="startOff" min="0" max="10" step="0.1" value="0" />
+        </label>
+        <label class="field" style="margin-bottom:0">
+          <span>Clip volume <b id="volVal">100%</b></span>
+          <input type="range" id="clipVol" min="0" max="1" step="0.01" value="1" />
+        </label>
+      </div>
+    </div>
+
+    <hr class="divider" />
+
+    <div class="group" id="audioGroup" hidden>
+      <h2>Audio</h2>
+      <label class="aud-chk"><input type="checkbox" id="muteClips" /> Mute all video audio</label>
+      <div class="aud-row">
+        <button class="btn sm" id="audUpload">♪ Upload audio…</button>
+        <button class="btn sm" id="audExtract">⏏ Extract from video…</button>
+      </div>
+      <input type="file" id="audFile" accept="audio/*" hidden />
+      <select id="audExtractSel" class="aud-sel-inline" hidden></select>
+      <div class="aud-card" id="audCard" hidden>
+        <div class="aud-name"><span id="audName">audio</span><span class="dur" id="audDur"></span></div>
+        <div class="trim" id="audTrim">
+          <canvas id="audWave"></canvas>
+          <div class="sel" id="audSel"></div>
+          <div class="h" id="audH0" style="left:0%"></div>
+          <div class="h" id="audH1" style="left:100%"></div>
+        </div>
+        <div class="trim-times"><span id="audT0">0.0s</span><span id="audT1">0.0s</span></div>
+        <label class="field" style="margin:10px 0 0">
+          <span>Soundtrack volume <b id="audVolVal">100%</b></span>
+          <input type="range" id="audVol" min="0" max="1" step="0.01" value="1" />
+        </label>
+        <div class="aud-row" style="margin-top:8px">
+          <button class="btn sm" id="audPreview">▶ Preview selection</button>
+          <button class="btn sm ghost" id="audRemove">Remove</button>
+        </div>
+      </div>
+      <p class="tray-empty" id="audHint" style="margin-top:8px">Upload a track or pull audio from one of your videos, then drag the handles to trim the part you want.</p>
     </div>
 
     <hr class="divider" />
@@ -331,6 +414,17 @@
       <div class="row" id="rowFps" hidden>
         <span>Video frame rate</span>
         <select id="exFps"><option value="24">24 fps (cinematic)</option><option value="30" selected>30 fps</option><option value="60">60 fps (smooth)</option></select>
+      </div>
+      <div class="row" id="rowLen" hidden>
+        <span>Length</span>
+        <span style="display:flex;gap:8px;align-items:center;flex:1;justify-content:flex-end">
+          <select id="exLenMode" style="width:auto">
+            <option value="longest">Match longest clip</option>
+            <option value="custom">Custom…</option>
+          </select>
+          <input type="number" id="exLenSec" min="0.5" max="120" step="0.5" value="5" style="width:78px" hidden />
+          <span id="exLenUnit" class="muted" hidden>sec</span>
+        </span>
       </div>
       <div id="exProgWrap" hidden>
         <p class="small muted" id="exProgLabel" style="margin:.2em 0">Recording…</p>
@@ -482,9 +576,11 @@
     ratio: RATIOS[0],
     layoutId: "2x2",
     tiles: [],            // parallel to current layout cells: {media, t:{scale,tx,ty,rot,flip}}
-    media: [],            // {id, type, el, url, name, w, h, duration}
+    media: [],            // {id, type, el, url, name, w, h, duration, startOffset, volume}
     selected: -1,
     style: { gap: 8, radius: 14, pad: 0, bg: "#0c0d12", border: "#ffffff", borderW: 0 },
+    view: { zoom: 1, x: 0, y: 0 },   // media-area viewport pan/zoom (preview only; never affects export)
+    audio: { muteClips: false, ext: null }, // ext: {kind,name,url,ownUrl,duration,trimStart,trimEnd,volume,buffer,peaks}
   };
 
   function currentCells() { return ALL_LAYOUTS[state.layoutId].cells; }
@@ -671,6 +767,9 @@
     const { w, h } = state.ratio;
     if (w >= h) { canvas.width = long; canvas.height = Math.round(long * h / w); }
     else { canvas.height = long; canvas.width = Math.round(long * w / h); }
+    state.view = { zoom: 1, x: 0, y: 0 };
+    const vz = document.getElementById("viewZoom"); if (vz) vz.value = 1;
+    applyView();
     invalidate();
   }
 
@@ -704,6 +803,12 @@
   // ---------- Interaction ----------
   let drag = null;
   canvas.addEventListener("pointerdown", (e) => {
+    if (e.shiftKey || e.button === 1) {
+      canvas.setPointerCapture(e.pointerId);
+      canvas.classList.add("vpan");
+      drag = { view: true, lastCX: e.clientX, lastCY: e.clientY, pointerId: e.pointerId };
+      return;
+    }
     const p = pointToCanvas(e.clientX, e.clientY);
     const i = hitTest(p.x, p.y);
     if (i < 0) return;
@@ -716,6 +821,12 @@
   });
   canvas.addEventListener("pointermove", (e) => {
     if (!drag) return;
+    if (drag.view) {
+      state.view.x = clamp(state.view.x + (e.clientX - drag.lastCX), -3000, 3000);
+      state.view.y = clamp(state.view.y + (e.clientY - drag.lastCY), -3000, 3000);
+      drag.lastCX = e.clientX; drag.lastCY = e.clientY; applyView();
+      return;
+    }
     const p = pointToCanvas(e.clientX, e.clientY);
     const g = computeGeometry(canvas.width, canvas.height)[drag.i];
     const box = geomBox(g);
@@ -728,6 +839,7 @@
   function endDrag(e) {
     if (!drag) return;
     canvas.classList.remove("dragging");
+    canvas.classList.remove("vpan");
     try { canvas.releasePointerCapture(drag.pointerId); } catch (_) {}
     drag = null;
   }
@@ -776,7 +888,7 @@
     files.forEach(file => {
       const url = URL.createObjectURL(file);
       const isVid = /^video\//.test(file.type);
-      const item = { id: uid(), type: isVid ? "video" : "image", url, name: file.name, w: 0, h: 0, duration: 0, el: null };
+      const item = { id: uid(), type: isVid ? "video" : "image", url, name: file.name, w: 0, h: 0, duration: 0, startOffset: 0, volume: 1, el: null };
       let settled = false;
       const done = () => { if (settled) return; settled = true; if (--pending === 0) finish(); };
       if (isVid) {
@@ -932,6 +1044,15 @@
       $("#zoom").value = tile.t.scale; $("#zoomVal").textContent = Math.round(tile.t.scale * 100) + "%";
       $("#rot").value = tile.t.rot; $("#rotVal").textContent = Math.round(tile.t.rot) + "°";
     }
+    const isVid = has && tile.media.type === "video";
+    const vc = $("#cellVideoCtl"); if (vc) vc.hidden = !isVid;
+    if (isVid) {
+      const m = tile.media, dur = Math.max(0.1, m.duration || 10);
+      const so = $("#startOff"); so.max = dur.toFixed(2); so.value = Math.min(m.startOffset || 0, dur);
+      $("#startVal").textContent = (m.startOffset || 0).toFixed(1) + "s";
+      const vol = (m.volume == null ? 1 : m.volume);
+      $("#clipVol").value = vol; $("#volVal").textContent = Math.round(vol * 100) + "%";
+    }
   }
   function shorten(s) { return s.length > 16 ? s.slice(0, 14) + "…" : s; }
 
@@ -1028,8 +1149,9 @@
   // ---------- Mode (image vs video) ----------
   function updateMode() {
     const vid = hasVideo();
-    $("#modeHint").textContent = vid ? "Contains video → video export (length of longest clip)" : "All photos → image export";
+    $("#modeHint").textContent = vid ? "Contains video → MP4 export" : "All photos → image export";
     $("#modeHint").style.color = vid ? "var(--accent)" : "";
+    const ag = $("#audioGroup"); if (ag) ag.hidden = !vid;
   }
 
   // ---------- Export ----------
@@ -1040,14 +1162,15 @@
     const fmtSel = $("#exFormat");
     fmtSel.innerHTML = "";
     if (vid) {
-      fmtSel.innerHTML = `<option value="webm">WebM video (VP9)</option>`;
-      $("#rowQuality").hidden = true; $("#rowFps").hidden = false;
-      const longest = Math.max(0, ...state.tiles.filter(t => t.media && t.media.type === "video").map(t => t.media.duration || 0));
-      const durTxt = longest > 0.05 ? `<b>${longest.toFixed(1)}s</b> long (your longest clip)` : `as long as your <b>longest clip</b>`;
-      $("#exMode").innerHTML = `This collage contains video, so EWI Grid records a <b>video</b> — ${durTxt}. Photos stay still; shorter clips loop. Audio comes from the longest clip when available.`;
+      fmtSel.innerHTML = `<option value="mp4">MP4 video (H.264)</option>`;
+      $("#rowQuality").hidden = true; $("#rowFps").hidden = false; $("#rowLen").hidden = false;
+      syncLenRow();
+      const longest = longestClipDur();
+      const durTxt = longest > 0.05 ? `<b>${longest.toFixed(1)}s</b> (your longest clip)` : `your <b>longest clip</b>`;
+      $("#exMode").innerHTML = `This collage contains video, so EWI Grid renders an <b>MP4</b> — by default ${durTxt}. Photos stay still; shorter clips loop. Audio mixes every clip you didn’t mute, plus any uploaded or extracted soundtrack.`;
     } else {
       fmtSel.innerHTML = `<option value="png">PNG (lossless)</option><option value="jpeg">JPEG (smaller)</option>`;
-      $("#rowFps").hidden = true;
+      $("#rowFps").hidden = true; $("#rowLen").hidden = true;
       $("#exMode").innerHTML = `All tiles are photos → a crisp, high-resolution <b>image</b>. PNG keeps transparency; JPEG is smaller.`;
       syncQualityRow();
     }
@@ -1098,26 +1221,59 @@
   async function exportVideo(off, octx, W, H, stamp) {
     const fps = +$("#exFps").value;
     const videos = state.tiles.filter(t => t.media && t.media.type === "video").map(t => t.media);
-    const longest = videos.reduce((a, b) => (b.duration > (a ? a.duration : 0) ? b : a), null);
-    const durMs = Math.max(500, (longest ? longest.duration : 1) * 1000);
+    const durMs = exportDurationMs();
 
-    // pick a supported mime
-    const candidates = ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp9", "video/webm;codecs=vp8,opus", "video/webm;codecs=vp8", "video/webm"];
-    const mime = candidates.find(m => window.MediaRecorder && MediaRecorder.isTypeSupported(m)) || "video/webm";
-    if (!window.MediaRecorder) { toast("Video export not supported in this browser"); return; }
+    // MP4 only — never WebM. Feature-detect an H.264 MP4 profile the recorder can emit.
+    const candidates = [
+      "video/mp4;codecs=avc1.640028,mp4a.40.2", "video/mp4;codecs=avc1.640028",
+      "video/mp4;codecs=avc1.42E01E,mp4a.40.2", "video/mp4;codecs=avc1.42E01E", "video/mp4"
+    ];
+    const mime = window.MediaRecorder ? candidates.find(m => MediaRecorder.isTypeSupported(m)) : null;
+    if (!window.MediaRecorder || !mime) {
+      toast("MP4 recording isn’t available here. Please use a current Safari, Chrome or Edge.");
+      $("#exProgWrap").hidden = true; $("#exGo").disabled = false; $("#exCancel").disabled = false;
+      return;
+    }
 
     const stream = off.captureStream(fps);
-    // best-effort audio from the longest clip via WebAudio (silent playback, captured for the file)
-    let audioCtx = null;
+
+    // ----- Audio graph: mix every clip (unless muted) at its own volume, plus the trimmed soundtrack -----
+    const ext = state.audio.ext;
+    const connected = [];      // nodes to detach from the destination when done
+    const runSources = [];     // buffer/element sources to stop when done
+    let dest = null;
     try {
-      if (longest && longest.el) {
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        const dest = audioCtx.createMediaStreamDestination();
-        if (!longest._srcNode) { longest._srcNode = audioCtx.createMediaElementSource(longest.el); }
-        longest._srcNode.connect(dest);
+      const wantClips = !state.audio.muteClips && videos.length > 0;
+      if (wantClips || ext) {
+        const ctx = getMixCtx();
+        dest = ctx.createMediaStreamDestination();
+        if (wantClips) {
+          videos.forEach(m => {
+            try {
+              if (!m._srcNode) { m._srcNode = ctx.createMediaElementSource(m.el); m._gain = ctx.createGain(); m._srcNode.connect(m._gain); }
+              m.el.muted = false; // routed only into the graph → never reaches the speakers
+              m._gain.gain.value = (m.volume == null ? 1 : m.volume);
+              m._gain.connect(dest); connected.push(m._gain);
+            } catch (_) {}
+          });
+        }
+        if (ext) {
+          const g = ctx.createGain(); g.gain.value = (ext.volume == null ? 1 : ext.volume);
+          g.connect(dest); connected.push(g);
+          const t0 = ext.trimStart || 0, t1 = ext.trimEnd || ext.duration || 0, span = Math.max(0.05, t1 - t0);
+          if (ext.buffer) {
+            const src = ctx.createBufferSource(); src.buffer = ext.buffer;
+            src.loop = true; src.loopStart = t0; src.loopEnd = t1;
+            src.connect(g); src.start(0, t0); runSources.push(src);
+          } else {
+            const ae = new Audio(ext.url); ae.loop = true; ae.currentTime = t0;
+            const node = ctx.createMediaElementSource(ae); node.connect(g);
+            ae.play().catch(() => {}); runSources.push({ stop: () => { try { ae.pause(); } catch (_) {} } });
+          }
+        }
         dest.stream.getAudioTracks().forEach(tr => stream.addTrack(tr));
       }
-    } catch (e) { /* no audio — video only */ }
+    } catch (e) { /* silent — video-only export */ }
 
     const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 12_000_000 });
     const chunks = [];
@@ -1126,31 +1282,44 @@
     $("#exProgWrap").hidden = false; $("#exGo").disabled = true; $("#exCancel").disabled = true;
     const bar = $("#exProgBar"), label = $("#exProgLabel");
 
-    // restart all videos from the top for a clean render
-    videos.forEach(m => { try { m.el.currentTime = 0; m.el.play().catch(() => {}); } catch (_) {} });
+    // Seek every clip to its chosen start point so nothing plays from a random position, then roll together.
+    await Promise.all(videos.map(m => new Promise(res => {
+      try {
+        const target = clamp(m.startOffset || 0, 0, Math.max(0, (m.duration || 0) - 0.05));
+        if (Math.abs((m.el.currentTime || 0) - target) < 0.05) return res();
+        const onSeek = () => { m.el.removeEventListener("seeked", onSeek); res(); };
+        m.el.addEventListener("seeked", onSeek);
+        m.el.currentTime = target;
+        setTimeout(res, 600);
+      } catch (_) { res(); }
+    })));
+    videos.forEach(m => { try { m.el.play().catch(() => {}); } catch (_) {} });
 
     const start = performance.now();
     let stopped = false;
     rec.start();
 
+    const frameGap = Math.max(8, Math.round(1000 / fps));
     function frame() {
       const elapsed = performance.now() - start;
       renderFrame(octx, W, H, { export: true });
       const pct = clamp(elapsed / durMs, 0, 1);
       bar.style.width = (pct * 100).toFixed(1) + "%";
-      label.textContent = `Recording… ${(elapsed / 1000).toFixed(1)}s / ${(durMs / 1000).toFixed(1)}s`;
+      label.textContent = `Rendering MP4… ${(elapsed / 1000).toFixed(1)}s / ${(durMs / 1000).toFixed(1)}s`;
       if (elapsed >= durMs || stopped) { rec.stop(); return; }
-      requestAnimationFrame(frame);
+      setTimeout(frame, frameGap);
     }
-    requestAnimationFrame(frame);
+    setTimeout(frame, frameGap);
 
     rec.onstop = () => {
-      try { if (audioCtx) audioCtx.close(); } catch (_) {}
-      const blob = new Blob(chunks, { type: mime });
-      download(blob, `ewi-grid-${stamp}.webm`);
+      runSources.forEach(s => { try { s.stop && s.stop(); } catch (_) {} });
+      connected.forEach(n => { try { n.disconnect(dest); } catch (_) {} });
+      videos.forEach(m => { try { m.el.muted = true; } catch (_) {} }); // restore the calm, silent preview
+      const blob = new Blob(chunks, { type: "video/mp4" });
+      download(blob, `ewi-grid-${stamp}.mp4`);
       $("#exProgWrap").hidden = true; $("#exGo").disabled = false; $("#exCancel").disabled = false;
       scrim.classList.remove("open");
-      toast("Video downloaded");
+      toast("MP4 downloaded");
     };
   }
 
@@ -1185,6 +1354,200 @@
   function toast(msg) {
     const el = $("#toast"); el.textContent = msg; el.classList.add("show");
     clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove("show"), 1800);
+  }
+
+  // ---------- Media-area view (multi-directional pan + zoom; preview only) ----------
+  function applyView() {
+    const v = state.view;
+    canvas.style.transformOrigin = "center center";
+    canvas.style.transform = `translate(${v.x}px, ${v.y}px) scale(${v.zoom})`;
+  }
+  function nudgeView(dx, dy) {
+    state.view.x = clamp(state.view.x + dx, -3000, 3000);
+    state.view.y = clamp(state.view.y + dy, -3000, 3000);
+    applyView();
+  }
+  $$("[data-vp]").forEach(b => b.addEventListener("click", () => {
+    const step = 80, k = b.dataset.vp;
+    if (k === "up") nudgeView(0, step);          // reveal the top
+    else if (k === "down") nudgeView(0, -step);  // reveal the bottom
+    else if (k === "left") nudgeView(step, 0);   // reveal the left
+    else if (k === "right") nudgeView(-step, 0); // reveal the right
+    else { state.view = { zoom: 1, x: 0, y: 0 }; $("#viewZoom").value = 1; applyView(); }
+  }));
+  $("#viewZoom").addEventListener("input", (e) => { state.view.zoom = +e.target.value; applyView(); });
+  // Arrow keys pan the view when no text field is focused.
+  window.addEventListener("keydown", (e) => {
+    if (/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName)) return;
+    const step = 80;
+    if (e.key === "ArrowUp") { nudgeView(0, step); e.preventDefault(); }
+    else if (e.key === "ArrowDown") { nudgeView(0, -step); e.preventDefault(); }
+    else if (e.key === "ArrowLeft") { nudgeView(step, 0); e.preventDefault(); }
+    else if (e.key === "ArrowRight") { nudgeView(-step, 0); e.preventDefault(); }
+  });
+
+  // ---------- Per-video controls (start time + volume) ----------
+  $("#startOff").addEventListener("input", (e) => {
+    const t = state.tiles[state.selected];
+    if (t && t.media && t.media.type === "video") {
+      const v = +e.target.value; t.media.startOffset = v;
+      $("#startVal").textContent = v.toFixed(1) + "s";
+      try { t.media.el.currentTime = v; } catch (_) {}
+    }
+  });
+  $("#clipVol").addEventListener("input", (e) => {
+    const t = state.tiles[state.selected];
+    if (t && t.media && t.media.type === "video") {
+      const v = +e.target.value; t.media.volume = v;
+      $("#volVal").textContent = Math.round(v * 100) + "%";
+    }
+  });
+
+  // ---------- Soundtrack: upload / extract / trim ----------
+  const AudioCtor = window.AudioContext || window.webkitAudioContext;
+  let mixCtx = null;
+  function getMixCtx() { if (!mixCtx) mixCtx = new AudioCtor(); if (mixCtx.state === "suspended") { try { mixCtx.resume(); } catch (_) {} } return mixCtx; }
+  let previewCtx = null, previewSrc = null, previewTimer = null;
+  function fmtT(s) { s = Math.max(0, s || 0); const m = Math.floor(s / 60), r = s - m * 60; return m > 0 ? `${m}:${r.toFixed(1).padStart(4, "0")}` : `${r.toFixed(1)}s`; }
+
+  $("#muteClips").addEventListener("change", (e) => { state.audio.muteClips = e.target.checked; });
+  $("#audUpload").addEventListener("click", () => $("#audFile").click());
+  $("#audFile").addEventListener("change", async (e) => {
+    const f = e.target.files[0]; e.target.value = "";
+    if (f) await setExternalAudio({ kind: "file", name: f.name, url: URL.createObjectURL(f), ownUrl: true });
+  });
+  $("#audExtract").addEventListener("click", () => {
+    const vids = state.media.filter(m => m.type === "video");
+    if (!vids.length) { toast("Add a video first"); return; }
+    const sel = $("#audExtractSel");
+    sel.innerHTML = `<option value="" disabled selected>Choose a video…</option>` + vids.map(m => `<option value="${m.id}">${shorten(m.name)}</option>`).join("");
+    sel.hidden = false; sel.focus();
+    sel.onchange = async () => {
+      const m = state.media.find(x => x.id === sel.value); sel.hidden = true; sel.onchange = null;
+      if (m) await setExternalAudio({ kind: "video", name: m.name + " (audio)", url: m.url, ownUrl: false });
+    };
+  });
+  async function setExternalAudio(info) {
+    removeExternalAudio(false);
+    const ext = { kind: info.kind, name: info.name, url: info.url, ownUrl: !!info.ownUrl, duration: 0, trimStart: 0, trimEnd: 0, volume: 1, buffer: null, peaks: null };
+    state.audio.ext = ext;
+    try {
+      const ab = await (await fetch(info.url)).arrayBuffer();
+      const ctx = getMixCtx();
+      ext.buffer = await ctx.decodeAudioData(ab.slice(0));
+      ext.duration = ext.buffer.duration;
+      ext.peaks = computePeaks(ext.buffer, 640);
+    } catch (err) {
+      const a = document.createElement("audio"); a.src = info.url;
+      await new Promise(res => { a.addEventListener("loadedmetadata", res, { once: true }); a.addEventListener("error", res, { once: true }); setTimeout(res, 3000); });
+      ext.duration = isFinite(a.duration) ? a.duration : 0;
+    }
+    ext.trimStart = 0; ext.trimEnd = ext.duration || 0;
+    renderAudioCard();
+    toast(info.kind === "video" ? "Audio extracted" : "Audio added");
+  }
+  function computePeaks(buffer, n) {
+    const ch = buffer.getChannelData(0);
+    const block = Math.max(1, Math.floor(ch.length / n));
+    const peaks = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      let max = 0; const s = i * block, e = Math.min(ch.length, s + block);
+      for (let j = s; j < e; j++) { const v = Math.abs(ch[j]); if (v > max) max = v; }
+      peaks[i] = max;
+    }
+    return peaks;
+  }
+  function drawWave() {
+    const ext = state.audio.ext, cv = $("#audWave");
+    if (!cv || !ext) return;
+    const rect = cv.getBoundingClientRect();
+    const w = cv.width = Math.max(1, Math.round(rect.width)), h = cv.height = Math.max(1, Math.round(rect.height));
+    const g = cv.getContext("2d"); g.clearRect(0, 0, w, h);
+    g.fillStyle = "rgba(160,170,205,.55)";
+    if (ext.peaks) {
+      const bw = w / ext.peaks.length;
+      for (let i = 0; i < ext.peaks.length; i++) { const ph = Math.max(1, ext.peaks[i] * h * 0.92); g.fillRect(i * bw, (h - ph) / 2, Math.max(0.5, bw * 0.8), ph); }
+    } else { g.fillRect(0, h / 2 - 1, w, 2); }
+  }
+  function renderAudioCard() {
+    const ext = state.audio.ext;
+    $("#audCard").hidden = !ext;
+    $("#audHint").style.display = ext ? "none" : "";
+    if (!ext) return;
+    $("#audName").textContent = ext.name;
+    $("#audDur").textContent = ext.duration ? fmtT(ext.duration) : "";
+    $("#audVol").value = ext.volume; $("#audVolVal").textContent = Math.round(ext.volume * 100) + "%";
+    drawWave(); syncTrimUI();
+  }
+  function syncTrimUI() {
+    const ext = state.audio.ext; if (!ext || !ext.duration) return;
+    const a = clamp(ext.trimStart / ext.duration, 0, 1) * 100, b = clamp(ext.trimEnd / ext.duration, 0, 1) * 100;
+    $("#audH0").style.left = a + "%"; $("#audH1").style.left = b + "%";
+    const sel = $("#audSel"); sel.style.left = a + "%"; sel.style.width = (b - a) + "%";
+    $("#audT0").textContent = fmtT(ext.trimStart); $("#audT1").textContent = fmtT(ext.trimEnd);
+  }
+  (function () {
+    const track = $("#audTrim"); let dragH = null;
+    const frac = (clientX) => { const r = track.getBoundingClientRect(); return clamp((clientX - r.left) / r.width, 0, 1); };
+    ["audH0", "audH1"].forEach(id => $("#" + id).addEventListener("pointerdown", (e) => { e.preventDefault(); dragH = id; try { $("#" + id).setPointerCapture(e.pointerId); } catch (_) {} }));
+    track.addEventListener("pointermove", (e) => {
+      if (!dragH) return; const ext = state.audio.ext; if (!ext || !ext.duration) return;
+      const t = frac(e.clientX) * ext.duration;
+      if (dragH === "audH0") ext.trimStart = Math.min(t, ext.trimEnd - 0.05);
+      else ext.trimEnd = Math.max(t, ext.trimStart + 0.05);
+      syncTrimUI();
+    });
+    const up = (e) => { if (dragH) { try { $("#" + dragH).releasePointerCapture(e.pointerId); } catch (_) {} dragH = null; } };
+    track.addEventListener("pointerup", up); track.addEventListener("pointercancel", up);
+  })();
+  $("#audVol").addEventListener("input", (e) => { if (state.audio.ext) { state.audio.ext.volume = +e.target.value; $("#audVolVal").textContent = Math.round(+e.target.value * 100) + "%"; } });
+  $("#audRemove").addEventListener("click", () => removeExternalAudio(true));
+  function removeExternalAudio(rerender) {
+    stopPreview();
+    const ext = state.audio.ext;
+    if (ext && ext.ownUrl && ext.url) { try { URL.revokeObjectURL(ext.url); } catch (_) {} }
+    state.audio.ext = null;
+    if (rerender) renderAudioCard();
+  }
+  $("#audPreview").addEventListener("click", () => {
+    const ext = state.audio.ext; if (!ext) return;
+    if (previewSrc) { stopPreview(); return; }
+    const span = Math.max(0.05, (ext.trimEnd || ext.duration) - (ext.trimStart || 0));
+    if (ext.buffer) {
+      previewCtx = new AudioCtor();
+      const src = previewCtx.createBufferSource(); src.buffer = ext.buffer;
+      const g = previewCtx.createGain(); g.gain.value = ext.volume;
+      src.connect(g); g.connect(previewCtx.destination);
+      src.start(0, ext.trimStart, span); previewSrc = src;
+      src.onended = () => stopPreview();
+    } else {
+      const a = new Audio(ext.url); a.currentTime = ext.trimStart; a.volume = ext.volume;
+      a.play().catch(() => {}); previewSrc = a;
+      previewTimer = setTimeout(() => stopPreview(), span * 1000);
+    }
+    $("#audPreview").textContent = "■ Stop";
+  });
+  function stopPreview() {
+    try { if (previewSrc && previewSrc.stop) previewSrc.stop(); else if (previewSrc && previewSrc.pause) previewSrc.pause(); } catch (_) {}
+    try { if (previewCtx) previewCtx.close(); } catch (_) {}
+    if (previewTimer) { clearTimeout(previewTimer); previewTimer = null; }
+    previewSrc = null; previewCtx = null;
+    const b = $("#audPreview"); if (b) b.textContent = "▶ Preview selection";
+  }
+  window.addEventListener("resize", () => { if (state.audio.ext) drawWave(); });
+
+  // ---------- Export length ----------
+  function longestClipDur() { return Math.max(0, ...state.tiles.filter(t => t.media && t.media.type === "video").map(t => t.media.duration || 0)); }
+  function syncLenRow() {
+    const custom = $("#exLenMode").value === "custom";
+    $("#exLenSec").hidden = !custom; $("#exLenUnit").hidden = !custom;
+    if (!custom) { const L = longestClipDur(); if (L > 0.05) $("#exLenSec").value = L.toFixed(1); }
+  }
+  $("#exLenMode").addEventListener("change", syncLenRow);
+  function exportDurationMs() {
+    if ($("#exLenMode") && $("#exLenMode").value === "custom") return Math.max(500, (+$("#exLenSec").value || 1) * 1000);
+    const L = longestClipDur();
+    return Math.max(500, (L > 0 ? L : 1) * 1000);
   }
 
   // ---------- Boot ----------
