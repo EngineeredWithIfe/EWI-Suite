@@ -1129,7 +1129,7 @@
         <span class="orb" style="background:${rgb(col)};box-shadow:0 0 12px ${rgba(col,.7)}"></span>
         <input id="insName" value="${escapeHtml(b.name)}" aria-label="Body name" />
       </div>
-      <div class="kv"><span class="k">Type</span><span class="v">${isStar(b)?"★ Star":"Planetary body"}</span></div>
+      <div class="kv"><span class="k">Type</span><span class="v">${isStar(b)?"Star":"Planetary body"}</span></div>
       <div class="kv"><span class="k">Mass</span><span class="v">${fmtMass(b.m)}</span></div>
       <div class="kv"><span class="k">Radius</span><span class="v">${fmtLen(physRadiusAU(b.m,b.mat))}</span></div>
       <div class="kv"><span class="k">Temperature</span><span class="v">${b.T<1000?b.T.toFixed(0):b.T.toExponential(2)} K</span></div>
@@ -1146,7 +1146,7 @@
         <button class="btn" id="insRev" title="Reverse velocity">Reverse ⇄</button>
       </div>
       <div class="mini-btns">
-        <button class="btn ${b.fixed?"primary":""}" id="insFix">${b.fixed?"📌 Pinned":"Pin in place"}</button>
+        <button class="btn ${b.fixed?"primary":""}" id="insFix">${b.fixed?"Pinned":"Pin in place"}</button>
         <button class="btn ${S.follow?"primary":""}" id="insFollow">${S.follow?"◎ Following":"Follow (C)"}</button>
       </div>
       <div class="mini-btns">

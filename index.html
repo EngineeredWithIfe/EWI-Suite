@@ -12,54 +12,52 @@
   }
   *{box-sizing:border-box}
   html{scroll-behavior:smooth}
-  body{margin:0;background:linear-gradient(180deg,#f7f7f7 0%,#ffffff 100%);color:var(--ink);
+  body{margin:0;background:#fff;color:var(--ink);
        font:16px/1.6 -apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Helvetica,Arial,sans-serif;
        -webkit-font-smoothing:antialiased}
-  nav{position:sticky;top:0;z-index:9;background:rgba(255,255,255,.78);
-      backdrop-filter:saturate(180%) blur(20px);border-bottom:1px solid rgba(210,210,215,.72)}
-  nav .bar{max-width:1080px;margin:0 auto;display:flex;align-items:center;gap:26px;
+  nav{position:sticky;top:0;z-index:9;background:rgba(255,255,255,.85);
+      backdrop-filter:saturate(180%) blur(20px);border-bottom:1px solid var(--hair)}
+  nav .bar{max-width:1024px;margin:0 auto;display:flex;align-items:center;gap:26px;
       padding:13px 22px;font-size:14px}
   nav .brand{font-weight:700;letter-spacing:-.02em;font-size:16px}
   nav a{color:var(--sub);text-decoration:none}
   nav a:hover{color:var(--ink)}
-  .hero{max-width:950px;margin:0 auto;text-align:center;padding:76px 22px 28px}
-  .hero .tm{font-size:13px;color:var(--sub);letter-spacing:.2em;text-transform:uppercase;
-      margin-bottom:14px;opacity:.95}
-  .hero h1{font-size:clamp(40px,6.4vw,66px);font-weight:700;letter-spacing:-.03em;
-      line-height:1.04;margin:0 0 16px;color:#111}
-  .hero h1 .g1{background:linear-gradient(90deg,#1d1d1f 0%,#6e6e73 100%);
+  .hero{max-width:900px;margin:0 auto;text-align:center;padding:86px 22px 30px}
+  .hero .tm{font-size:14px;color:var(--sub);letter-spacing:.14em;text-transform:uppercase;
+      margin-bottom:18px}
+  .hero h1{font-size:clamp(44px,7vw,76px);font-weight:700;letter-spacing:-.03em;
+      line-height:1.04;margin:0 0 18px}
+  .hero h1 .g1{background:linear-gradient(96deg,#0071e3,#8a3ffc);
       -webkit-background-clip:text;background-clip:text;color:transparent}
-  .hero h1 .g2{background:linear-gradient(90deg,#4c8dff 0%,#1d1d1f 100%);
+  .hero h1 .g2{background:linear-gradient(96deg,#f56300,#e30000);
       -webkit-background-clip:text;background-clip:text;color:transparent}
-  .hero p{color:var(--sub);font-size:18px;line-height:1.7;max-width:720px;margin:0 auto}
-  .hero .ife{margin-top:14px;font-size:14px}
+  .hero p{color:var(--sub);font-size:20px;max-width:640px;margin:0 auto}
+  .hero .ife{margin-top:14px;font-size:15px}
   .hero .ife b{color:var(--red)}
-  .grid{max-width:1080px;margin:40px auto 0;padding:0 22px 40px;display:grid;
-      grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px}
-  .tile{background:rgba(255,255,255,.96);border:1px solid rgba(210,210,215,.92);border-radius:24px;padding:28px 28px 24px;display:flex;
-      flex-direction:column;min-height:240px;box-shadow:0 10px 28px rgba(17,17,17,.04);transition:transform .18s ease, box-shadow .18s ease}
-  .tile:hover{transform:translateY(-2px);box-shadow:0 16px 36px rgba(17,17,17,.08)}
-  .tile .k{font-size:11.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;
+  .grid{max-width:1024px;margin:44px auto 0;padding:0 22px 30px;display:grid;
+      grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px}
+  .tile{background:var(--panel);border-radius:22px;padding:34px 30px;display:flex;
+      flex-direction:column;min-height:250px}
+  .tile .k{font-size:12px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;
       margin-bottom:8px}
-  .tile h2{font-size:24px;font-weight:700;letter-spacing:-.02em;margin:0 0 8px}
+  .tile h2{font-size:26px;font-weight:700;letter-spacing:-.02em;margin:0 0 8px}
   .tile p{color:var(--sub);font-size:15px;margin:0 0 18px;flex:1}
   .tile .go{display:flex;gap:14px;flex-wrap:wrap;font-size:15px}
-  .tile .go a{color:var(--ink);text-decoration:none;font-weight:600}
-  .tile .go a:hover{color:var(--blue)}
+  .tile .go a{color:var(--blue);text-decoration:none}
+  .tile .go a:hover{text-decoration:underline}
   .tile.blue .k{color:var(--blue)} .tile.purple .k{color:var(--purple)}
   .tile.orange .k{color:var(--orange)} .tile.teal .k{color:var(--teal)}
   .tile.green .k{color:var(--green)} .tile.red .k{color:var(--red)}
   .tile.magenta .k{color:var(--magenta)} .tile.amber .k{color:var(--amber)}
   .tile.cyan .k{color:var(--cyan)} .tile.indigo .k{color:var(--indigo)}
-  section.band{background:linear-gradient(180deg,#fafafa 0%,#ffffff 100%);margin-top:44px;padding:56px 22px 64px}
+  section.band{background:var(--panel);margin-top:50px;padding:64px 22px}
   section.band .inner{max-width:900px;margin:0 auto;text-align:center}
   section.band h2{font-size:clamp(28px,4vw,40px);font-weight:700;letter-spacing:-.025em;margin:0 0 12px}
   section.band p{color:var(--sub);font-size:17px;max-width:680px;margin:0 auto}
-  .platforms{display:flex;justify-content:center;gap:12px;margin-top:24px;flex-wrap:wrap;
-      color:var(--sub);font-size:14px}
-  .platforms span{background:rgba(255,255,255,.7);border:1px solid var(--hair);padding:10px 14px;border-radius:999px}
-  .platforms b{color:var(--ink);display:block;font-size:15px;margin-bottom:2px}
-  footer{padding:40px 22px 50px;text-align:center;color:var(--sub);font-size:13px}
+  .platforms{display:flex;justify-content:center;gap:34px;margin-top:26px;flex-wrap:wrap;
+      color:var(--sub);font-size:15px}
+  .platforms b{color:var(--ink);display:block;font-size:17px;margin-bottom:2px}
+  footer{padding:44px 22px;text-align:center;color:var(--sub);font-size:13px}
   footer .love{color:var(--red)}
 </style>
 </head>
@@ -72,8 +70,8 @@
 <div class="hero">
   <div class="tm">Engineered With Ife™</div>
   <h1><span class="g1">Engineered</span> with <span class="g2">Love.</span><br>Built to last.</h1>
-  <p>EWI is a family of carefully considered tools built for focus, clarity, and longevity.
-     Each product is designed to feel calm, dependable, and useful from the first click.</p>
+  <p>EWI is the parent company for a family of software built from first principles —
+     no bloat, no borrowed engines, no shortcuts. Timeless tools that respect the person using them.</p>
   <p class="ife"><b>“Ife”</b> [Yoruba] = <b>“Love”</b> [English]</p>
 </div>
 
@@ -111,7 +109,7 @@
     <div class="k">Media</div>
     <h2>EWI Grid</h2>
     <p>Collage any mix of photos and videos — square, story, wallpaper and more. Grid, mosaic,
-       and radial ✳ rosette layouts; pan, zoom, and reframe each tile. Download a crisp image,
+       and radial rosette layouts; pan, zoom, and reframe each tile. Download a crisp image,
        or — when any clip is a video — a video the length of your longest clip. All on your Mac.</p>
     <div class="go"><a href="grid/">Open the app →</a></div>
   </div>
@@ -195,7 +193,7 @@
        in the ewi-suite/apple-apps starter kits — built on Apple's own frameworks
        (SFSpeechRecognizer, AVFoundation, WebKit), zero third-party dependencies.</p>
     <div class="platforms">
-      <span><b>Web</b>localhost, today</span>
+      <span><b>Web</b>live in your browser</span>
       <span><b>iOS</b>SwiftUI · App Store-ready pattern</span>
       <span><b>macOS</b>SwiftUI · one codebase</span>
     </div>

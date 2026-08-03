@@ -152,10 +152,10 @@
       <div class="sec">
         <h3>Add</h3>
         <div class="addgrid">
-          <button class="addbtn" id="a-import"><span class="ic">🎞️</span>Media</button>
+          <button class="addbtn" id="a-import"><span class="ic"><svg viewBox="0 0 16 16" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.2" y="3.6" width="11.6" height="8.8" rx="1.3"/><path d="M6 3.8v8.4M10 3.8v8.4"/></svg></span>Media</button>
           <button class="addbtn" id="a-title"><span class="ic">T</span>Title</button>
-          <button class="addbtn" id="a-photo"><span class="ic">🖼️</span>Color card</button>
-          <button class="addbtn" id="a-tone"><span class="ic">🔊</span>Tone</button>
+          <button class="addbtn" id="a-photo"><span class="ic"><svg viewBox="0 0 16 16" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.2" y="3.4" width="11.6" height="9.2" rx="1.3"/><circle cx="5.9" cy="6.4" r="1"/><path d="M2.8 12l3.3-2.9 2.3 1.9 2-1.5 2.8 2.5"/></svg></span>Color card</button>
+          <button class="addbtn" id="a-tone"><span class="ic"><svg viewBox="0 0 16 16" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.4 6.2v3.6h2.2L9 12.4V3.6L5.6 6.2H3.4z"/><path d="M11 5.9a3.2 3.2 0 010 4.2"/></svg></span>Tone</button>
         </div>
       </div>
       <div class="sec">
@@ -298,7 +298,7 @@ function renderPool(){
   wrap.innerHTML="";
   pool.forEach(function(m){
     var d=document.createElement("div"); d.className="pitem"; d.tabIndex=0; d.setAttribute("role","button"); d.setAttribute("aria-label","Add "+m.name+" to timeline");
-    var icon=m.type==="video"?"🎬":m.type==="audio"?"🎵":"🖼️";
+    var icon=m.type==="video"?'<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.2" y="3.6" width="11.6" height="8.8" rx="1.3"/><path d="M6 3.8v8.4M10 3.8v8.4"/></svg>':m.type==="audio"?'<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.4 6.2v3.6h2.2L9 12.4V3.6L5.6 6.2H3.4z"/><path d="M11 5.9a3.2 3.2 0 010 4.2"/></svg>':'<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.2" y="3.4" width="11.6" height="9.2" rx="1.3"/><circle cx="5.9" cy="6.4" r="1"/><path d="M2.8 12l3.3-2.9 2.3 1.9 2-1.5 2.8 2.5"/></svg>';
     d.innerHTML='<span class="th">'+icon+'</span><span class="nm">'+escapeHtml(m.name)+'</span><span class="du">'+m.dur.toFixed(1)+'s</span>';
     d.addEventListener("click",function(){ dropMedia(m); });
     d.addEventListener("keydown",function(e){ if(e.key==="Enter"||e.key===" "){e.preventDefault();dropMedia(m);} });
@@ -442,7 +442,7 @@ function renderTracks(){
   // display top->bottom = text, overlay, video, audio (reverse of draw order)
   tracks.slice().reverse().forEach(function(tr){
     var row=document.createElement("div"); row.className="track";
-    var icon=tr.kind==="text"?"T":tr.kind==="audio"?"🎵":tr.kind==="overlay"?"▣":"🎬";
+    var icon=tr.kind==="text"?"T":tr.kind==="audio"?'<svg viewBox="0 0 16 16" width="12" height="12" style="vertical-align:-2px" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.4 6.2v3.6h2.2L9 12.4V3.6L5.6 6.2H3.4z"/><path d="M11 5.9a3.2 3.2 0 010 4.2"/></svg>':tr.kind==="overlay"?"▣":'<svg viewBox="0 0 16 16" width="12" height="12" style="vertical-align:-2px" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.2" y="3.6" width="11.6" height="8.8" rx="1.3"/><path d="M6 3.8v8.4M10 3.8v8.4"/></svg>';
     row.innerHTML='<div class="lbl">'+icon+' '+tr.name+'</div><div class="lane"></div>';
     var lane=row.querySelector(".lane");
     tr.clips.forEach(function(c){
