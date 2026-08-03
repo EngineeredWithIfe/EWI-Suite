@@ -1,0 +1,7 @@
+# Local, proprietary engine bundle — served for real downloads on localhost /
+# trusted distribution, but NEVER published to the public repo (protects source).
+downloads/
+*.zip
+
+# OS / editor noise
+.DS_Store

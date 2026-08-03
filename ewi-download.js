@@ -1,30 +1,30 @@
 /* ===========================================================================
    EWI Suite — shared "Download the app" control.
 
-   Design goals (IP-safe, Ollama-style):
-   - The suite's engines are DISTRIBUTED AS A SIGNED, PACKAGED ARTIFACT
-     (an installer / binary / release asset) — never as source. Set the single
-     DOWNLOAD_URL below to that artifact (a .dmg / .pkg / .zip direct link) or
-     to the official Releases page. No proprietary code is ever exposed by this
-     page, because this page only *links* to the packaged download.
+   How the download resolves (IP-safe):
+   - LOCAL_ZIP is the REAL, runnable engine bundle (downloads/ewi-suite.zip),
+     built by build-ewi-suite-bundle.sh and served next to this script. It
+     lives in a gitignored folder, so it is available on localhost / trusted
+     distribution but is NEVER pushed to the public repo.
+   - On click we HEAD-check LOCAL_ZIP: if present, we trigger a genuine file
+     download of the whole suite; if absent (e.g. the public GitHub Pages host,
+     where the private bundle isn't served) we fall back to the Releases page.
    - "It's all the same files": the whole suite ships in ONE bundle, so once a
      visitor has downloaded it from ANY product, the button is hidden on every
      other product (state is shared per-origin via localStorage) and replaced
      with a quiet "you already have it" note.
-
-   To wire a real one-click download later, point DOWNLOAD_URL at a direct file
-   (e.g. https://github.com/EngineeredWithIfe/EWI-Suite/releases/latest/download/EWI-Suite.dmg)
-   and this script will trigger a genuine file download automatically.
    =========================================================================== */
 (function () {
   "use strict";
 
-  // --- Single source of truth: where the packaged (non-source) app lives. ---
-  var DOWNLOAD_URL = "https://github.com/EngineeredWithIfe/EWI-Suite/releases";
+  // Resolve the bundle relative to THIS script (site root), so it works from
+  // any /product/ subpath and on both localhost and project-pages origins.
+  var SCRIPT_SRC = (document.currentScript && document.currentScript.src) || "";
+  var LOCAL_ZIP = SCRIPT_SRC
+    ? new URL("downloads/ewi-suite.zip", SCRIPT_SRC).href
+    : "downloads/ewi-suite.zip";
+  var RELEASE_URL = "https://github.com/EngineeredWithIfe/EWI-Suite/releases";
   var STORAGE_KEY = "ewi-suite-downloaded"; // shared across all products (same origin)
-
-  // A direct file link (has a file extension) => real download; else open page.
-  var IS_DIRECT_FILE = /\.(dmg|pkg|zip|tar\.gz|tgz|exe|msi|appimage)(\?|#|$)/i.test(DOWNLOAD_URL);
 
   function injectStyles() {
     if (document.getElementById("ewi-dl-styles")) return;
@@ -61,18 +61,34 @@
     return p;
   }
 
+  function downloadFile(url) {
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = "ewi-suite.zip"; // hint the browser to download rather than navigate
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    // Remove after a beat: yanking the anchor synchronously can abort the
+    // download before the browser has committed to it.
+    setTimeout(function () {
+      if (a.parentNode) a.parentNode.removeChild(a);
+    }, 1500);
+  }
+
   function triggerDownload() {
-    if (IS_DIRECT_FILE) {
-      var a = document.createElement("a");
-      a.href = DOWNLOAD_URL;
-      a.download = ""; // hint the browser to download rather than navigate
-      a.rel = "noopener";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-    } else {
-      window.open(DOWNLOAD_URL, "_blank", "noopener");
-    }
+    if (hasLocalBundle()) downloadFile(LOCAL_ZIP);
+    else window.open(RELEASE_URL, "_blank", "noopener");
+  }
+
+  // The private bundle is served only where it physically exists: on a local
+  // dev host (localhost / 127.0.0.1 / ::1 / file:). The public GitHub Pages
+  // host never carries it (gitignored), so there we point at Releases instead.
+  // This is deterministic — no network probe — which avoids dev-server HEAD/Range
+  // quirks while staying correct on the public host.
+  function hasLocalBundle() {
+    if (location.protocol === "file:") return true;
+    var h = location.hostname;
+    return h === "localhost" || h === "127.0.0.1" || h === "::1" || h === "[::1]";
   }
 
   function build() {
@@ -97,7 +113,7 @@
       'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
       '<path d="M12 3v12"/><path d="m7 12 5 5 5-5"/><path d="M5 21h14"/></svg>' +
       "Download the EWI Suite app</button>" +
-      '<p class="ewi-dl-sub">One signed download installs the engines for every EWI product \u00b7 no source exposed</p>';
+      '<p class="ewi-dl-sub">One download \u00b7 every EWI engine \u00b7 runs entirely on your device, nothing in the cloud</p>';
 
     var btn = wrap.querySelector(".ewi-dl");
     btn.addEventListener("click", function () {
