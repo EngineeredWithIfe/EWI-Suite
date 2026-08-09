@@ -27,7 +27,6 @@
 
   var APPS = [
     { name: "EWI Home",       url: u(""),               k: "EW", c: "#1d1d1f" },
-    { name: "EWI Trading",    url: u("trading/"),       k: "Tr", c: "#00a8a8" },
     { name: "ClipForge",      url: u("clipforge/"),     k: "Cf", c: "#f56300" },
     { name: "EWI Reel",       url: u("reel/"),          k: "Re", c: "#ff2d78" },
     { name: "EWI Grid",       url: u("grid/"),          k: "Gr", c: "#12b886" },
