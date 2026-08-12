@@ -39,6 +39,7 @@
     { name: "Flow Dictation", url: u("flow-dictation/"),k: "Fd", c: "#8a3ffc" },
     { name: "EWI Mind",       url: u("mind/"),          k: "Mi", c: "#e30000" },
     { name: "EWI Lens",       url: u("lens/"),          k: "Le", c: "#008009" },
+    { name: "EWI Scholar",    url: u("scholar/"),       k: "Sc", c: "#0d9488" },
     { name: "NAVLINQ",        url: "https://apps.apple.com/us/app/navlinq/id6769218514", k: "Nv", c: "#008009" }
   ];
 

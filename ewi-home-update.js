@@ -1,25 +1,18 @@
 /* ===========================================================================
    EWI Suite — home-page "keep your copy current" control.
 
-   Renders TWO buttons on the EWI home page:
-     1) "Update — replace my copy"  — gets the latest bundle and, on browsers
-        that support the File System Access API (Chromium: Chrome/Edge/Opera),
-        lets the visitor pick their EXISTING ewi-suite.zip and overwrite it in
-        place (a genuine replace). On Safari/Firefox — which, by web-security
-        design, cannot delete or silently overwrite a user's files — it falls
-        back to a normal download named "ewi-suite.zip" (replace when your
-        browser asks, or drop it into the same folder).
-     2) "Download a fresh copy"     — always saves a NEW, version-stamped file
-        (ewi-suite-<version>.zip), so it never collides with an older copy.
+   Renders ONE button on the EWI home page:
+     "Download a fresh copy"  — always saves a NEW, version-stamped file
+     (ewi-suite-<version>.zip), so it never collides with an older copy.
 
-   Both requests are cache-busted with the current build version, so a visitor
+   The request is cache-busted with the current build version, so a visitor
    who already downloaded an older bundle is guaranteed the newest bytes — the
    fix for "I re-downloaded but the app looks unchanged."
 
-   Honesty note: no web page can reach into a visitor's disk and delete a file
-   without their consent — that is a hard browser sandbox guarantee (~100%,
-   enforced by every major engine). The File System Access API is the closest
-   standards-based path: the USER selects the file and authorizes the write.
+   Honesty note: no web page can reach into a visitor's disk and delete or
+   overwrite a file without their consent — that is a hard browser sandbox
+   guarantee (~100%, enforced by every major engine). Saving a fresh,
+   version-stamped file is the reliable, universally supported path.
    =========================================================================== */
 (function () {
   "use strict";
@@ -59,11 +52,6 @@
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
     'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
     '<path d="M12 3v12"/><path d="m7 12 5 5 5-5"/><path d="M5 21h14"/></svg>';
-  var SYNC_ICON =
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
-    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
-    '<path d="M21 12a9 9 0 0 1-9 9 9 9 0 0 1-7.35-3.82"/><path d="M3 12a9 9 0 0 1 9-9 9 9 0 0 1 7.35 3.82"/>' +
-    '<path d="M21 3v6h-6"/><path d="M3 21v-6h6"/></svg>';
 
   var meta; // status line (aria-live)
   function say(msg) { if (meta) meta.textContent = msg || ""; }
@@ -93,45 +81,6 @@
     a.href = url; a.download = filename; a.rel = "noopener";
     document.body.appendChild(a); a.click();
     setTimeout(function () { if (a.parentNode) a.parentNode.removeChild(a); }, 1500);
-  }
-
-  // True in-place replace where the platform allows it (Chromium). The user
-  // picks a file and authorizes the write; if they choose their existing
-  // ewi-suite.zip, it is overwritten. Elsewhere we fall back to a download.
-  function replaceInPlace(v, btn) {
-    var url = bust(ZIP_URL, v);
-    if (typeof window.showSaveFilePicker === "function") {
-      btn.disabled = true; say("Choose your existing ewi-suite.zip to replace it…");
-      var handle;
-      window.showSaveFilePicker({
-        suggestedName: "ewi-suite.zip",
-        types: [{ description: "EWI Suite bundle", accept: { "application/zip": [".zip"] } }]
-      }).then(function (h) {
-        handle = h; say("Downloading the latest build…");
-        return fetch(url, { cache: "no-store" });
-      }).then(function (resp) {
-        if (!resp || !resp.ok) throw new Error("fetch failed");
-        return Promise.all([handle.createWritable(), resp.arrayBuffer()]);
-      }).then(function (parts) {
-        var writable = parts[0], buf = parts[1];
-        say("Writing " + fmtBytes(buf.byteLength) + "…");
-        return writable.write(buf).then(function () { return writable.close(); });
-      }).then(function () {
-        say("✓ Your EWI Suite copy is now up to date. Re-launch the engine to see the changes.");
-      }).catch(function (err) {
-        if (err && err.name === "AbortError") { say(""); }
-        else {
-          // Any failure (permission, unsupported write) → safe download fallback.
-          anchorDownload(url, "ewi-suite.zip");
-          say("Saved the latest ewi-suite.zip — replace your old file (or drop it in the same folder).");
-        }
-      }).then(function () { btn.disabled = false; });
-    } else {
-      // Safari / Firefox: cannot overwrite disk files — download with the same
-      // name so the browser offers to replace it.
-      anchorDownload(url, "ewi-suite.zip");
-      say("Saved the latest ewi-suite.zip — when your browser asks, choose Replace (or save it into the same folder as your old copy).");
-    }
   }
 
   function freshCopy(v) {
@@ -314,19 +263,15 @@
       '<div class="inner">' +
       "<h2>Already have the app? Keep it current.</h2>" +
       "<p>Downloaded an earlier build? If a product looks unchanged after an update, your " +
-      "computer is still running the older files. Refresh your copy here — you always get the newest bytes.</p>" +
+      "computer is still running the older files. Download the newest copy here — you always get the latest bytes.</p>" +
       '<div class="ewi-updbtns">' +
-      '<button class="ewi-updbtn primary" id="ewiUpdReplace" type="button" ' +
-      'aria-label="Update and replace my existing EWI Suite copy">' + SYNC_ICON +
-      "Update — replace my copy</button>" +
-      '<button class="ewi-updbtn" id="ewiUpdFresh" type="button" ' +
+      '<button class="ewi-updbtn primary" id="ewiUpdFresh" type="button" ' +
       'aria-label="Download a fresh, version-stamped copy of the EWI Suite">' + DL_ICON +
       "Download a fresh copy</button>" +
       "</div>" +
       '<p class="ewi-updmeta" id="ewiUpdMeta" role="status" aria-live="polite"></p>' +
-      '<p class="ewi-updhint">“Replace” overwrites your existing file in place on Chrome, Edge and Opera; ' +
-      "on Safari and Firefox it downloads with the same name so you can replace it yourself. " +
-      "“Fresh copy” always saves a new, version-stamped file.</p>" +
+      '<p class="ewi-updhint">Each download is a new, version-stamped file (ewi-suite-&lt;version&gt;.zip), ' +
+      "so it never collides with an older copy. Unzip it and it runs alongside — or in place of — your previous one.</p>" +
       "</div>";
 
     var anchor = document.getElementById("platforms");
@@ -345,9 +290,6 @@
       }
     });
 
-    document.getElementById("ewiUpdReplace").addEventListener("click", function () {
-      replaceInPlace(vState, this);
-    });
     document.getElementById("ewiUpdFresh").addEventListener("click", function () {
       freshCopy(vState);
     });
