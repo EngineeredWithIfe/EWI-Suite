@@ -187,6 +187,7 @@
     .btn,.toggle,.toggle::after,.toast{transition:none}
   }
 </style>
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.js" } }</script>
 </head>
 <body>
 <a href="#view" class="skip">Skip to the simulation canvas</a>
@@ -199,6 +200,7 @@
     </div>
     <div class="grow"></div>
     <div class="clock" id="clock" aria-live="off">t = <b>0.00</b> yr · <span id="bodyCount">0</span> bodies</div>
+    <button class="btn" id="studioBtn" title="Open the 3D Studio — real solar-system events, cinematic scenes, and 3D imports" style="background:linear-gradient(180deg,#7c5cff,#5a3fd6);color:#fff;border-color:transparent">◈&nbsp;3D&nbsp;Studio</button>
     <button class="btn ghost" id="helpBtn" aria-haspopup="dialog">?&nbsp;Guide</button>
     <button class="btn ghost" id="resetBtn" title="Clear the simulation">Reset</button>
   </header>
@@ -1249,5 +1251,6 @@
   window.__cosmos={S,SCEN,diagnostics,byId,makeBody,isStar,equilibriumT,integrate,DT};
 })();
 </script>
+<script type="module" src="cosmos-studio.js"></script>
 </body>
 </html>
