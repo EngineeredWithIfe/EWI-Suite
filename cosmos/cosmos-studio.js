@@ -252,7 +252,10 @@ function buildDOM(){
       <select class="st-btn ghost" id="stEvent" title="Jump to a real astronomical event" style="max-width:210px"></select>
       <button class="st-btn ghost" id="stSave" title="Save scene to this browser">💾 <span class="lbl">Save</span></button>
       <button class="st-btn ghost" id="stExport" title="Export scene as a file">⇩ <span class="lbl">Export</span></button>
-      <button class="st-btn" id="stClose" title="Back to the 2D sandbox">✕ <span class="lbl">Close</span></button>
+      <div class="st-seg" role="group" aria-label="Render style" style="margin-left:2px">
+        <button class="st-btn" id="stView2d" title="Back to the 2D physics sandbox">◫ <span class="lbl">2D</span></button>
+        <button class="st-btn on" id="stView3d" title="3D cinematic studio" aria-pressed="true">◈ <span class="lbl">3D</span></button>
+      </div>
     </div>
 
     <aside class="st-panel st-left">
@@ -302,7 +305,7 @@ function buildDOM(){
   sel.addEventListener('change', ()=>{ if (sel.value!=='') jumpToEvent(+sel.value); });
 
   // wiring
-  root.querySelector('#stClose').addEventListener('click', close);
+  root.querySelector('#stView2d').addEventListener('click', close);
   camBtnExp.addEventListener('click', ()=>setCamMode('explore'));
   camBtnCine.addEventListener('click', ()=>setCamMode('cinematic'));
   root.querySelector('#stAdd').addEventListener('click', addPrimitiveMenu);
@@ -1005,6 +1008,7 @@ function openStudio(){
   open = true;
   root.classList.add('on');
   toggleSuiteChrome(true);
+  syncViewSwitch(true);
   onResize();
   clock.start();
   // resume audio contexts after the user gesture that opened the studio
@@ -1015,15 +1019,33 @@ function openStudio(){
 function close(){
   open = false; root.classList.remove('on');
   toggleSuiteChrome(false);
+  syncViewSwitch(false);
   cancelAnimationFrame(raf); raf = 0;
   // pause any playing media to save resources
   imported.forEach(im=>{ if (im.extra.video) im.extra.video.pause(); });
 }
 
-/* wire the header button from the 2D app */
+/* Keep the 2D-header switch and the Studio toolbar switch reflecting the active
+   render style, so the toggle reads identically from either view. */
+function syncViewSwitch(is3D){
+  const h2 = document.getElementById('view2d'), h3 = document.getElementById('view3d');
+  if (h2) h2.setAttribute('aria-pressed', is3D ? 'false' : 'true');
+  if (h3) h3.setAttribute('aria-pressed', is3D ? 'true'  : 'false');
+  if (root){
+    const s2 = root.querySelector('#stView2d'), s3 = root.querySelector('#stView3d');
+    if (s2) s2.classList.toggle('on', !is3D);
+    if (s3) s3.classList.toggle('on',  is3D);
+  }
+}
+
+/* wire the 2D-header 2D·3D switch (and the legacy button, if present) */
 function wireOpener(){
-  const btn = document.getElementById('studioBtn');
-  if (btn) btn.addEventListener('click', openStudio);
+  const b3 = document.getElementById('view3d');
+  const b2 = document.getElementById('view2d');
+  if (b3) b3.addEventListener('click', openStudio);
+  if (b2) b2.addEventListener('click', ()=>{ if (open) close(); });
+  const legacy = document.getElementById('studioBtn'); // older markup fallback
+  if (legacy) legacy.addEventListener('click', openStudio);
 }
 if (document.readyState==='loading') document.addEventListener('DOMContentLoaded', wireOpener);
 else wireOpener();

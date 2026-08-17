@@ -200,7 +200,10 @@
     </div>
     <div class="grow"></div>
     <div class="clock" id="clock" aria-live="off">t = <b>0.00</b> yr · <span id="bodyCount">0</span> bodies</div>
-    <button class="btn" id="studioBtn" title="Open the 3D Studio — real solar-system events, cinematic scenes, and 3D imports" style="background:linear-gradient(180deg,#7c5cff,#5a3fd6);color:#fff;border-color:transparent">◈&nbsp;3D&nbsp;Studio</button>
+    <div class="seg" id="viewSwitch" role="group" aria-label="Render style" style="padding:3px">
+      <button id="view2d" aria-pressed="true" title="2D physics sandbox" style="padding:7px 13px;flex:0 0 auto">◫&nbsp;2D</button>
+      <button id="view3d" aria-pressed="false" title="Open the 3D Studio — real solar-system events, cinematic scenes, and 3D imports" style="padding:7px 13px;flex:0 0 auto">◈&nbsp;3D</button>
+    </div>
     <button class="btn ghost" id="helpBtn" aria-haspopup="dialog">?&nbsp;Guide</button>
     <button class="btn ghost" id="resetBtn" title="Clear the simulation">Reset</button>
   </header>
