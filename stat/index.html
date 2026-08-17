@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <script src="../ewi-theme.js"></script>
-<title>EWI Stat — statistics workbench</title>
+<title>Statica — statistics workbench</title>
 <meta name="description" content="A statistics workbench: a Data View and Variable View spreadsheet, descriptives, frequencies, t-tests, one-way ANOVA, correlation, linear regression and crosstabs with exact p-values, plus histograms, boxplots and scatterplots — all in your browser." />
 <style>
   :root{
@@ -136,7 +136,7 @@
 <a class="skip" href="#stage">Skip to workbench</a>
 <header>
   <div class="brand"><span class="mk" aria-hidden="true">Σ</span>
-    <span>EWI Stat <small>statistics workbench</small></span></div>
+    <span>Statica <small>statistics workbench</small></span></div>
   <nav class="menu" aria-label="Main menu">
     <div class="m"><button aria-haspopup="true">Data</button>
       <div class="dd">
@@ -220,9 +220,9 @@
 <!-- guide -->
 <div class="modal" id="guide" role="dialog" aria-modal="true" aria-labelledby="g-t">
   <div class="dlg">
-    <h2 id="g-t">EWI Stat — guide <button class="x" data-close>Close</button></h2>
+    <h2 id="g-t">Statica — guide <button class="x" data-close>Close</button></h2>
     <div class="dbody" style="line-height:1.6;color:var(--muted)">
-      <p><b style="color:var(--ink)">EWI Stat</b> is a full statistics workbench. Everything runs in your browser.</p>
+      <p><b style="color:var(--ink)">Statica</b> is a full statistics workbench. Everything runs in your browser.</p>
       <h4 style="color:var(--accent2);margin:14px 0 4px">Enter data</h4>
       <p>Type into <b>Data View</b> (rows = cases, columns = variables) or load a <b>sample dataset</b> /
          <b>Import CSV</b> from the Data menu. Define types and measurement level in <b>Variable View</b>.</p>
@@ -670,7 +670,7 @@ document.querySelectorAll(".modal").forEach(function(m){ m.addEventListener("cli
 document.addEventListener("keydown",function(e){ if(e.key==="Escape")closeModals(); });
 document.getElementById("btn-export").addEventListener("click",exportOutput);
 function exportOutput(){ var out=document.getElementById("out").innerHTML; var css=document.querySelector("style").innerHTML;
-  var html='<!doctype html><meta charset="utf-8"><title>EWI Stat — output</title><style>body{background:#0f1218;color:#eaf0f7;font-family:sans-serif;padding:24px}'+css+'</style><h1>EWI Stat — output report</h1>'+out;
+  var html='<!doctype html><meta charset="utf-8"><title>Statica — output</title><style>body{background:#0f1218;color:#eaf0f7;font-family:sans-serif;padding:24px}'+css+'</style><h1>Statica — output report</h1>'+out;
   var a=document.createElement("a"); a.download="ewi-stat-output.html"; a.href=URL.createObjectURL(new Blob([html],{type:"text/html"})); a.click(); }
 
 /* ---- sample datasets (seeded, reproducible) ---- */

@@ -104,7 +104,10 @@
     "#ewi-radial{touch-action:none;max-width:100%;height:auto;user-select:none;-webkit-user-select:none}" +
     "#ewi-radial .slice{cursor:grab}" +
     "#ewi-radial .slice.dragging{cursor:grabbing}" +
-    "#ewi-radial .slice .wedge{" + (reduce ? "" : "transition:transform .12s ease;") + "}" +
+    "#ewi-radial .slice .wedge{" + (reduce ? "" : "transition:transform .12s ease,filter .15s ease;") + "}" +
+    "#ewi-radial .slice:hover .wedge{filter:brightness(1.14) saturate(1.06)}" +
+    "#ewi-radial .slice.dragging .wedge{filter:brightness(1.14) saturate(1.06)}" +
+    "#ewi-radial .slice:hover{" + (reduce ? "" : "filter:drop-shadow(0 6px 16px rgba(0,0,0,.22));") + "}" +
     "#ewi-radial .slot{" + (reduce ? "" : "transition:transform .42s cubic-bezier(.22,.61,.24,1);") + "}" +
     "#ewi-radial .lbl{font:600 13px -apple-system,BlinkMacSystemFont,'SF Pro Text',Helvetica,Arial,sans-serif;fill:#fff;pointer-events:none}" +
     "#ewi-radial .hub{fill:var(--bg,#fff)}" +
@@ -276,8 +279,11 @@
 
   /* ========================= RADIAL VIEW (hexadecagon) ===================== */
   var SVGNS = "http://www.w3.org/2000/svg";
+  // N (sector count) is set to the exact number of products at render time,
+  // so the wheel is always a full ring with no empty slice.
   var R = { size: 560, cx: 280, cy: 280, outer: 262, inner: 96, N: 16 };
   var radialEl = null;
+  var hubTitle = null, hubSub = null;   // center readout (updated on slice hover)
 
   function buildRadial() {
     if (!radialWrap) {
@@ -312,6 +318,7 @@
       radialEl.setAttribute("aria-label", "EWI products wheel — drag a slice to rearrange");
       radialWrap.appendChild(radialEl);
     }
+    R.N = Math.max(1, order.length);   // one sector per product — no empty slice
     radialEl.textContent = "";
     var wedge = topWedgePath();
     var labelR = (R.outer + R.inner) / 2 + 6;
@@ -322,6 +329,11 @@
       g.setAttribute("data-name", it.name);
       g.setAttribute("transform", "rotate(" + slotDeg(i) + " " + R.cx + " " + R.cy + ")");
       g.style.cursor = "grab";
+
+      // Native tooltip + screen-reader label on hover/focus.
+      var ttl = document.createElementNS(SVGNS, "title");
+      ttl.textContent = it.kicker ? (it.name + " — " + it.kicker) : it.name;
+      g.appendChild(ttl);
 
       var path = document.createElementNS(SVGNS, "path");
       path.setAttribute("class", "wedge");
@@ -345,6 +357,16 @@
         lg.appendChild(tx);
       });
       g.appendChild(lg);
+
+      // Hover feedback: the center hub reads out the product under the cursor.
+      g.addEventListener("pointerenter", function () {
+        if (radialEl.querySelector(".slice.dragging")) return; // don't disturb a drag
+        setHub(it.name, it.kicker || "click to open");
+      });
+      g.addEventListener("pointerleave", function () {
+        if (radialEl.querySelector(".slice.dragging")) return;
+        resetHub();
+      });
       radialEl.appendChild(g);
     });
 
@@ -353,15 +375,21 @@
     hub.setAttribute("class", "hub"); hub.setAttribute("cx", R.cx); hub.setAttribute("cy", R.cy);
     hub.setAttribute("r", R.inner - 6); hub.setAttribute("stroke", "var(--hair,#e6e6eb)"); hub.setAttribute("stroke-width", "1.5");
     radialEl.appendChild(hub);
-    var ht = document.createElementNS(SVGNS, "text");
-    ht.setAttribute("class", "hubtx"); ht.setAttribute("x", R.cx); ht.setAttribute("y", R.cy - 2); ht.textContent = "EWI";
-    radialEl.appendChild(ht);
-    var hs = document.createElementNS(SVGNS, "text");
-    hs.setAttribute("class", "hubsub"); hs.setAttribute("x", R.cx); hs.setAttribute("y", R.cy + 14); hs.textContent = "drag to arrange";
-    radialEl.appendChild(hs);
+    hubTitle = document.createElementNS(SVGNS, "text");
+    hubTitle.setAttribute("class", "hubtx"); hubTitle.setAttribute("x", R.cx); hubTitle.setAttribute("y", R.cy - 2); hubTitle.textContent = "EWI";
+    radialEl.appendChild(hubTitle);
+    hubSub = document.createElementNS(SVGNS, "text");
+    hubSub.setAttribute("class", "hubsub"); hubSub.setAttribute("x", R.cx); hubSub.setAttribute("y", R.cy + 14); hubSub.textContent = "drag to arrange";
+    radialEl.appendChild(hubSub);
 
     wireRadialDrag();
   }
+
+  function setHub(title, sub) {
+    if (hubTitle) hubTitle.textContent = title;
+    if (hubSub) hubSub.textContent = sub || "";
+  }
+  function resetHub() { setHub("EWI", "drag to arrange"); }
 
   function wrapLabel(name) {
     var parts = name.split(" ").filter(Boolean);

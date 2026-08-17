@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <script src="../ewi-theme.js"></script>
-<title>EWI Cut — timeline video editor</title>
+<title>Splice — timeline video editor</title>
 <meta name="description" content="A multi-track timeline video editor: layer photos, video, text and audio, trim and split, add transitions, filters, Ken Burns and animated titles, then export a high-quality MP4 video — all in your browser, with nothing uploaded." />
 <style>
   :root{
@@ -145,7 +145,7 @@
 <div class="rec" id="rec"><span class="dot"></span><span id="rec-t">Recording… 0.0s</span></div>
 <header>
   <div class="brand"><span class="mk" aria-hidden="true">✂</span>
-    <span>EWI Cut <small>timeline video editor</small></span></div>
+    <span>Splice <small>timeline video editor</small></span></div>
   <div class="htools">
     <label class="tc" for="ratio">Ratio</label>
     <select class="rat" id="ratio" aria-label="Aspect ratio">
@@ -225,7 +225,7 @@
 <div class="modal" id="help" role="dialog" aria-modal="true" aria-labelledby="hh">
   <div class="card">
     <button class="x" data-close>Close</button>
-    <h2 id="hh">EWI Cut — guide</h2>
+    <h2 id="hh">Splice — guide</h2>
     <p>A compact multi-track video editor. Everything runs in your browser; nothing is uploaded.</p>
     <h4>Build</h4>
     <p><b>Import</b> photos, video or audio (or generate a <b>Title</b>, <b>Color card</b>, or <b>Tone</b>).
@@ -639,7 +639,7 @@ window.addEventListener("resize",function(){ setRatio(project.ratio); layout(); 
   var card=genColorCard(); var title=null;
   dropMedia(card);                 // a color card on the video track
   addTitle();                      // a title on the text track
-  var t=selClip(); if(t){ t.text="EWI Cut"; t.y=0.0; t.dur=3; t.fadeIn=0.4; t.fadeOut=0.4; }
+  var t=selClip(); if(t){ t.text="Splice"; t.y=0.0; t.dur=3; t.fadeIn=0.4; t.fadeOut=0.4; }
   var tone=genTone(); dropMedia(tone);
   selId=null; seek(0); layout(); syncInsp(); render();
   document.getElementById("tl-fit").click();

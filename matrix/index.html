@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <script src="../ewi-theme.js"></script>
-<title>EWI Matrix — numerical computing workbench</title>
+<title>Numerica — numerical computing workbench</title>
 <meta name="description" content="A numerical computing environment: a real matrix interpreter with linear algebra, statistics, and 2D/3D plotting — entirely in your browser." />
 <style>
   :root{
@@ -146,7 +146,7 @@
 <header>
   <div class="brand">
     <span class="mk" aria-hidden="true">∑</span>
-    <span>EWI Matrix <small>numerical computing · matrices · plots</small></span>
+    <span>Numerica <small>numerical computing · matrices · plots</small></span>
   </div>
   <span class="status" id="status" role="status" aria-live="polite">ready</span>
   <button class="hbtn" id="btn-examples" aria-haspopup="true">Examples</button>
@@ -237,7 +237,7 @@
 <div class="modal" id="doc-modal" role="dialog" aria-modal="true" aria-labelledby="doc-h">
   <div class="card">
     <button class="x" data-close>Close</button>
-    <h2 id="doc-h">EWI Matrix — language reference</h2>
+    <h2 id="doc-h">Numerica — language reference</h2>
     <p>A compact matrix and array language that runs entirely in your browser. No files leave your Mac.</p>
     <h4>Values &amp; construction</h4>
     <p><code>3.14</code>, <code>1e-3</code>, row <code>[1 2 3]</code>, matrix <code>[1 2; 3 4]</code>,
@@ -855,7 +855,7 @@ function formatValue(v,name){
 function appendOut(text,cls){ var log=document.getElementById("log"); var span=document.createElement("span"); span.className=cls||"out"; span.textContent=text.endsWith("\n")?text:text+"\n"; log.appendChild(span); log.scrollTop=log.scrollHeight; }
 function echoCmd(text){ var log=document.getElementById("log"); var s=document.createElement("span"); s.className="cmd"; s.textContent=">> "+text+"\n"; log.appendChild(s); log.scrollTop=log.scrollHeight; }
 function banner(){ var log=document.getElementById("log"); var b=document.createElement("div"); b.className="banner";
-  b.textContent="EWI Matrix R2026a — numerical computing environment.\nType a command below, or open Examples. Local, private, zero dependencies."; log.appendChild(b); }
+  b.textContent="Numerica R2026a — numerical computing environment.\nType a command below, or open Examples. Local, private, zero dependencies."; log.appendChild(b); }
 function renderWorkspace(){
   var wrap=document.getElementById("wsWrap"), keys=Object.keys(ENV).filter(function(k){return k!=="ans"||ENV.ans;});
   document.getElementById("ws-count").textContent=Object.keys(ENV).length+" var"+(Object.keys(ENV).length===1?"":"s");
