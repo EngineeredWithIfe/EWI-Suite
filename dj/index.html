@@ -710,21 +710,38 @@
 
   // ============================ LINK FETCH ============================
   var backendOK=false;
-  fetch("/api/health").then(function(r){return r.json();}).then(function(h){
-    backendOK=!!(h&&h.ok);
-    document.getElementById("enginePill").innerHTML = backendOK
-      ? 'Engine · <b>link-ready</b>' : 'Engine · <b>local files</b>';
-  }).catch(function(){ document.getElementById("enginePill").innerHTML='Engine · <b>local files</b>'; });
+  function setEnginePill(){
+    var el=document.getElementById("enginePill");
+    if(el) el.innerHTML = backendOK ? 'Engine · <b>link-ready</b>' : 'Engine · <b>local files</b>';
+  }
+  // Probe the engine. Returns a promise resolving to the live backend state so
+  // callers can re-check on demand (not just once at boot).
+  function probeHealth(){
+    return fetch("/api/health",{cache:"no-store"})
+      .then(function(r){ return r.json(); })
+      .then(function(h){ backendOK=!!(h&&h.ok); setEnginePill(); return backendOK; })
+      .catch(function(){ backendOK=false; setEnginePill(); return false; });
+  }
+  probeHealth();
 
   function fetchLink(deck, url, status){
     if(!url){ status("Paste a public track link first.",true); return; }
-    if(!backendOK){ status("Add-from-link needs the local server (yt-dlp + ffmpeg). Load a file instead.",true); return; }
     status("Resolving link…");
-    fetch("/api/fetch",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:url})})
-      .then(function(r){ return r.json().then(function(j){ return {ok:r.ok,j:j}; }); })
-      .then(function(res){ if(!res.ok){ status(res.j.error||"Couldn't fetch that link.",true); return; }
-        pollJob(deck, res.j.job.id, status); })
-      .catch(function(){ status("Network error reaching the local engine.",true); });
+    // Re-probe /api/health on demand so an engine that started AFTER this page
+    // loaded (or a tab opened before `python3 serve.py 8714` was running) heals
+    // itself — no manual reload needed. That stale one-time probe was the #1
+    // reason add-from-link appeared "broken" while YouTube fetch worked fine.
+    (backendOK ? Promise.resolve(true) : probeHealth()).then(function(ok){
+      if(!ok){
+        status("Add-from-link needs the local EWI DJ engine running. Start it with:  cd ewi-dj  then  python3 serve.py 8714  — then paste the link again. (Or load an audio file.)",true);
+        return;
+      }
+      fetch("/api/fetch",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:url})})
+        .then(function(r){ return r.json().then(function(j){ return {ok:r.ok,j:j}; }); })
+        .then(function(res){ if(!res.ok){ status(res.j.error||"Couldn't fetch that link.",true); return; }
+          pollJob(deck, res.j.job.id, status); })
+        .catch(function(){ status("Network error reaching the local engine.",true); });
+    });
   }
   function pollJob(deck, jid, status){
     var t=setInterval(function(){
