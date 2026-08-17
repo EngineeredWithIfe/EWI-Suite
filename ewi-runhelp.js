@@ -59,8 +59,8 @@
     var dark = isDark();
     var s = el("style", { id: "ewi-rh-css" });
     s.textContent =
-      "#ewi-rh-open{position:fixed;left:14px;bottom:14px;z-index:99997;display:inline-flex;align-items:center;gap:7px;" +
-      "min-height:36px;padding:0 14px;border-radius:100px;border:1px solid " + (dark ? "#3a3a3c" : "#d2d2d7") + ";" +
+      "#ewi-rh-open{position:fixed;top:7px;right:58px;z-index:99998;display:inline-flex;align-items:center;gap:7px;" +
+      "height:34px;padding:0 14px;border-radius:100px;border:1px solid " + (dark ? "#3a3a3c" : "#d2d2d7") + ";" +
       "background:" + (dark ? "rgba(28,28,30,.92)" : "rgba(255,255,255,.92)") + ";backdrop-filter:saturate(180%) blur(20px);" +
       "-webkit-backdrop-filter:saturate(180%) blur(20px);color:" + (dark ? "#f5f5f7" : "#1d1d1f") + ";font-weight:600;" +
       "font-size:12.5px;cursor:pointer;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Helvetica Neue',Arial,sans-serif;" +
@@ -108,6 +108,61 @@
       "#ewi-rh-modal a{color:#ff6b8a}" +
       "#ewi-rh-open:focus-visible,#ewi-rh-copy:focus-visible,#ewi-rh-x:focus-visible,#ewi-rh-tabs button:focus-visible{outline:2px solid #7cc0ff;outline-offset:2px}";
     document.head.appendChild(s);
+  }
+
+  // ---- Header placement ---------------------------------------------------
+  // Seat "Run locally" in the shared 34px header lane: just to the RIGHT of the
+  // theme (Light/Dark) button and just to the LEFT of the app-switcher. We read
+  // the switcher's live geometry and push the theme button leftward to make
+  // room, so the order reads  [Light/Dark] [Run locally] [switcher]  with no
+  // overlap — robust to script load order, theme-label width changes, and
+  // viewport resize. Falls back gracefully if either control is absent.
+  function placeInHeader() {
+    var btn = document.getElementById("ewi-rh-open");
+    if (!btn) return;
+    var GAP = 10;
+    var sw = document.getElementById("ewi-sw"); // app switcher (rightmost control)
+    var rlRight;
+    if (sw) {
+      var r = sw.getBoundingClientRect();
+      var swGap = Math.max(8, Math.round(window.innerWidth - r.right));
+      rlRight = swGap + Math.round(r.width) + GAP; // sit just left of the switcher
+    } else {
+      rlRight = 14; // no switcher on this page → pin to the corner
+    }
+    btn.style.left = "auto";
+    btn.style.bottom = "auto";
+    btn.style.top = "7px";
+    btn.style.right = rlRight + "px";
+    // Push the theme button to sit just to the LEFT of "Run locally".
+    var theme = document.getElementById("ewiThemeBtn");
+    if (theme) {
+      var rlW = Math.round(btn.getBoundingClientRect().width) || btn.offsetWidth || 128;
+      theme.style.right = (rlRight + rlW + GAP) + "px";
+    }
+  }
+
+  function schedulePlacement() {
+    placeInHeader();
+    // The theme button and switcher are injected by their own scripts and may
+    // appear AFTER this deferred script runs. Re-place the moment either is
+    // inserted so there is no visible jump, then disconnect once both exist.
+    if (!schedulePlacement._obs && window.MutationObserver) {
+      var obs = new MutationObserver(function () { placeInHeader(); });
+      obs.observe(document.documentElement, { childList: true, subtree: true });
+      schedulePlacement._obs = obs;
+      var ticks = 0;
+      var iv = setInterval(function () {
+        placeInHeader();
+        var ready = document.getElementById("ewi-sw") && document.getElementById("ewiThemeBtn");
+        if (ready || ticks++ > 40) { obs.disconnect(); clearInterval(iv); }
+      }, 100);
+    }
+    if (!schedulePlacement._bound) {
+      schedulePlacement._bound = true;
+      window.addEventListener("resize", placeInHeader);
+      window.addEventListener("load", placeInHeader);
+    }
   }
 
   function cmdFor(os) { return CMD[os] || MAC_CMD; }
@@ -197,6 +252,7 @@
     document.addEventListener("keydown", function (e) { if (e.key === "Escape" && ov.classList.contains("open")) close(); });
 
     renderOS(currentOS);
+    schedulePlacement();
   }
 
   function legacyCopy(txt) {
