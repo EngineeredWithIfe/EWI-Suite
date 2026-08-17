@@ -35,6 +35,7 @@
     { name: "EWI Forge",      url: u("forge/"),         k: "Fo", c: "#e87d0d" },
     { name: "EWI Cut",        url: u("cut/"),           k: "Ct", c: "#00d1c7" },
     { name: "EWI Pulse",      url: u("pulse/"),         k: "Pu", c: "#ff375f" },
+    { name: "EWI DJ",         url: u("dj/"),            k: "DJ", c: "#7c3aed" },
     { name: "EWI Stat",       url: u("stat/"),          k: "St", c: "#4c8dff" },
     { name: "Browser Cloud",  url: u("browser-cloud/"), k: "Bc", c: "#0071e3" },
     { name: "Flow Dictation", url: u("flow-dictation/"),k: "Fd", c: "#8a3ffc" },
