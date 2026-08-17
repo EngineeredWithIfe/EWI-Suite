@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <script src="../ewi-theme.js"></script>
-<title>Pulse — beat-synced viral clips</title>
+<title>EWI Pulse — beat-synced viral clips</title>
 <meta name="description" content="Drop in photos and video clips, add a song (upload or paste a link), pick a length — Pulse auto-edits a viral-ready clip whose cuts land on the beats, drops, and intensity of the music. Everything runs in your browser." />
 <style>
   :root{
@@ -134,7 +134,7 @@
 <header>
   <div class="brand">
     <div class="mk" aria-hidden="true">Pu</div>
-    <div>Pulse<small>Beat-synced viral clips — in your browser</small></div>
+    <div>EWI Pulse<small>Beat-synced viral clips — in your browser</small></div>
   </div>
   <div class="htools">
     <button class="hbtn" id="resetBtn" type="button">Reset</button>
@@ -444,25 +444,36 @@
     var rd=new FileReader(); rd.onload=function(){ decodeArrayBuffer(rd.result,file.name,file,null); }; rd.readAsArrayBuffer(file);
   }
 
-  /* ---- optional backend link-fetch (shared engine with EWI Reel) ------ */
-  function checkBackend(){
-    fetch("/api/health").then(function(r){return r.json();}).then(function(h){
-      if(!h||!h.ok){ disableLink(h&&h.yt_dlp===false ? "Run Pulse locally with yt-dlp + ffmpeg installed to pull audio from a link. Uploading an audio file works everywhere." : "Link-fetch needs the local Pulse server. You can upload an audio file here."); }
-    }).catch(function(){ disableLink("Link-fetch needs the local Pulse server (python3 serve.py 8713). You can upload an audio file here."); });
+  /* ---- optional backend link-fetch (shared engine with EWI Reel) ------
+     Parity fix with EWI Reel / EWI DJ: never disable the "Paste a link" tab on
+     a one-time boot probe. A stale probe that ran before the local engine was
+     up was the #1 reason paste-a-link looked "broken". We probe once for the
+     status note, then RE-PROBE on demand when the user actually fetches, so an
+     engine started AFTER this page loaded heals itself with no manual reload. */
+  var backendOK=false;
+  function noteBackend(){
+    var n=$("linkNote"); if(!n) return;
+    if(backendOK){ n.style.display="none"; n.textContent=""; return; }
+    n.style.display="block";
+    n.textContent="Paste a link, then Fetch. If the local Pulse engine isn’t running yet, start it with  cd ewi-pulse  then  python3 serve.py 8713  and Fetch again. Uploading an audio file works everywhere.";
   }
-  function disableLink(msg){
-    $("tabLink").disabled=true; var n=$("linkNote"); n.style.display="block"; n.textContent=msg;
-    $("linkInput").disabled=true; $("fetchAudio").disabled=true;
+  function probeHealth(){
+    return fetch("/api/health",{cache:"no-store"}).then(function(r){return r.json();})
+      .then(function(h){ backendOK=!!(h&&h.ok); noteBackend(); return backendOK; })
+      .catch(function(){ backendOK=false; noteBackend(); return false; });
   }
   function fetchAudioLink(){
     var url=($("linkInput").value||"").trim(); if(!url){ toast("Paste a link first."); return; }
     $("fetchAudio").disabled=true; $("fetchAudio").textContent="Fetching…";
-    fetch("/api/fetch",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:url})})
-      .then(function(r){return r.json().then(function(j){return {ok:r.ok,j:j};});})
-      .then(function(res){
-        if(!res.ok||!res.j.job){ throw new Error(res.j.error||"Fetch failed"); }
-        pollJob(res.j.job.id);
-      }).catch(function(e){ endFetch(); toast(e.message||"Fetch failed."); });
+    (backendOK ? Promise.resolve(true) : probeHealth()).then(function(ok){
+      if(!ok){ endFetch(); toast("Start the local Pulse engine (python3 serve.py 8713), then Fetch again."); return; }
+      fetch("/api/fetch",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:url})})
+        .then(function(r){return r.json().then(function(j){return {ok:r.ok,j:j};});})
+        .then(function(res){
+          if(!res.ok||!res.j.job){ throw new Error(res.j.error||"Fetch failed"); }
+          pollJob(res.j.job.id);
+        }).catch(function(e){ endFetch(); toast(e.message||"Fetch failed."); });
+    });
   }
   function endFetch(){ $("fetchAudio").disabled=false; $("fetchAudio").textContent="Fetch audio"; }
   function pollJob(id){
@@ -799,7 +810,7 @@
       it.appendChild(ovRange("Size", Math.round(o.scale*100)+"%", 10,100,1,Math.round(o.scale*100), function(v){ o.scale=v/100; afterOverlayChange(); }, function(v){return Math.round(v)+"%";}));
       it.appendChild(ovRange("Appears at", fmt(o.start), 0,maxT,0.1,o.start, function(v){ o.start=+v; afterOverlayChange(); }, function(v){return fmt(v);}));
       it.appendChild(ovRange("Duration", o.dur.toFixed(1)+"s", 0.3,maxT,0.1,o.dur, function(v){ o.dur=+v; afterOverlayChange(); }, function(v){return (+v).toFixed(1)+"s";}));
-      it.appendChild(ovRange("Rotation", o.rot+"°", -45,45,1,o.rot, function(v){ o.rot=+v; afterOverlayChange(); }, function(v){return v+"°";}));
+      it.appendChild(ovRange("Rotation", o.rot+"°", -180,180,1,o.rot, function(v){ o.rot=+v; afterOverlayChange(); }, function(v){return v+"°";}));
       it.appendChild(ovRange("Opacity", Math.round(o.opacity*100)+"%", 10,100,1,Math.round(o.opacity*100), function(v){ o.opacity=v/100; afterOverlayChange(); }, function(v){return Math.round(v)+"%";}));
       wrap.appendChild(it);
     });
@@ -1107,7 +1118,7 @@
     e.preventDefault(); if(!$("playBtn").disabled){ playing?stop():play(); } } });
 
   /* ----------------------------------------------------------------- init */
-  setAspect("9:16"); buildNoise(); renderPool(); renderOverlays(); drawStatic(); bindDrop(); bindWave(); checkBackend(); restore();
+  setAspect("9:16"); buildNoise(); renderPool(); renderOverlays(); drawStatic(); bindDrop(); bindWave(); probeHealth(); restore();
   window.addEventListener("resize",function(){ if(songDur()) drawWave(audio.buffer); });
 })();
 </script>

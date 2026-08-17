@@ -33,6 +33,17 @@
   function build() {
     if (window.EWI_THEME_NO_BUTTON) return;
     if (!document.body || document.getElementById("ewiThemeBtn")) return;
+    // Responsive sizing: tablets / small laptops tighten the pill; phones
+    // collapse the Light/Dark wordmark to an icon-only circle so the header
+    // controls never overlap. !important overrides the inline styles below.
+    if (!document.getElementById("ewi-theme-mq")) {
+      var mqs = document.createElement("style");
+      mqs.id = "ewi-theme-mq";
+      mqs.textContent =
+        "@media (max-width:900px){#ewiThemeBtn{padding:0 11px !important;font-size:12px !important;gap:6px !important}}" +
+        "@media (max-width:560px){#ewiThemeBtn{padding:0 !important;width:34px !important;gap:0 !important;justify-content:center !important}#ewiThemeLabel{display:none !important}}";
+      document.head.appendChild(mqs);
+    }
     var b = document.createElement("button");
     b.id = "ewiThemeBtn";
     b.type = "button";

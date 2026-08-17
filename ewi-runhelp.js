@@ -106,7 +106,13 @@
       "#ewi-rh-x:hover{background:" + (dark ? "#3a3a3c" : "#e4e4ea") + "}" +
       "#ewi-rh-modal code{background:" + (dark ? "#26262b" : "#f1f1f4") + ";padding:1px 5px;border-radius:5px;font-size:11.5px}" +
       "#ewi-rh-modal a{color:#ff6b8a}" +
-      "#ewi-rh-open:focus-visible,#ewi-rh-copy:focus-visible,#ewi-rh-x:focus-visible,#ewi-rh-tabs button:focus-visible{outline:2px solid #7cc0ff;outline-offset:2px}";
+      "#ewi-rh-open:focus-visible,#ewi-rh-copy:focus-visible,#ewi-rh-x:focus-visible,#ewi-rh-tabs button:focus-visible{outline:2px solid #7cc0ff;outline-offset:2px}" +
+      // Responsive: tablets / small laptops tighten the pill; phones collapse the
+      // "Run locally" wordmark to an icon-only circle so the header controls
+      // never overlap. placeInHeader() re-reads the live (collapsed) width and
+      // keeps the Light/Dark button seated just to its left on every resize.
+      "@media (max-width:900px){#ewi-rh-open{padding:0 11px;font-size:11.5px;gap:6px}}" +
+      "@media (max-width:560px){#ewi-rh-open{font-size:0;gap:0;width:34px;padding:0;justify-content:center}#ewi-rh-open .d{font-size:9px}#ewi-rh-modal{width:min(560px,96vw)}}";
     document.head.appendChild(s);
   }
 

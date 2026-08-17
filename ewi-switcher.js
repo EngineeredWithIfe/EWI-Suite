@@ -27,21 +27,21 @@
 
   var APPS = [
     { name: "EWI Home",       url: u(""),               k: "EW", c: "#1d1d1f" },
-    { name: "ClipForge",      url: u("clipforge/"),     k: "Cf", c: "#f56300" },
+    { name: "EWI ClipForge",  url: u("clipforge/"),     k: "Cf", c: "#f56300" },
     { name: "EWI Reel",       url: u("reel/"),          k: "Re", c: "#ff2d78" },
-    { name: "Mosaic",         url: u("grid/"),          k: "Gr", c: "#12b886" },
+    { name: "EWI Mosaic",      url: u("grid/"),          k: "Gr", c: "#12b886" },
     { name: "EWI Cosmos",     url: u("cosmos/"),        k: "Co", c: "#7c5cff" },
-    { name: "Numerica",       url: u("matrix/"),        k: "Mx", c: "#f97316" },
-    { name: "Foundry",        url: u("forge/"),         k: "Fo", c: "#e87d0d" },
-    { name: "Splice",         url: u("cut/"),           k: "Ct", c: "#00d1c7" },
-    { name: "Pulse",          url: u("pulse/"),         k: "Pu", c: "#ff375f" },
-    { name: "Decks",          url: u("dj/"),            k: "DJ", c: "#7c3aed" },
-    { name: "Statica",        url: u("stat/"),          k: "St", c: "#4c8dff" },
-    { name: "Browser Cloud",  url: u("browser-cloud/"), k: "Bc", c: "#0071e3" },
-    { name: "Flow Dictation", url: u("flow-dictation/"),k: "Fd", c: "#8a3ffc" },
-    { name: "Cortex",         url: u("mind/"),          k: "Mi", c: "#e30000" },
-    { name: "Sight",          url: u("lens/"),          k: "Le", c: "#008009" },
-    { name: "Tutor",          url: u("scholar/"),       k: "Sc", c: "#0d9488" },
+    { name: "EWI Numerica",    url: u("matrix/"),        k: "Mx", c: "#f97316" },
+    { name: "EWI Foundry",     url: u("forge/"),         k: "Fo", c: "#e87d0d" },
+    { name: "EWI Splice",      url: u("cut/"),           k: "Ct", c: "#00d1c7" },
+    { name: "EWI Pulse",       url: u("pulse/"),         k: "Pu", c: "#ff375f" },
+    { name: "EWI Decks",       url: u("dj/"),            k: "DJ", c: "#7c3aed" },
+    { name: "EWI Statica",     url: u("stat/"),          k: "St", c: "#4c8dff" },
+    { name: "EWI Browser Cloud",  url: u("browser-cloud/"), k: "Bc", c: "#0071e3" },
+    { name: "EWI Flow Dictation", url: u("flow-dictation/"),k: "Fd", c: "#8a3ffc" },
+    { name: "EWI Cortex",      url: u("mind/"),          k: "Mi", c: "#e30000" },
+    { name: "EWI Sight",       url: u("lens/"),          k: "Le", c: "#008009" },
+    { name: "EWI Tutor",       url: u("scholar/"),       k: "Sc", c: "#0d9488" },
     { name: "NAVLINQ",        url: "https://apps.apple.com/us/app/navlinq/id6769218514", k: "Nv", c: "#008009" }
   ];
 
@@ -82,7 +82,14 @@
     "#ewi-sw-foot{grid-column:1/-1;text-align:center;font-size:10.5px;color:#6e6e73;padding-top:6px;border-top:1px solid #e8e8ed;margin-top:4px}" +
     "#ewi-home{position:fixed;top:7px;left:14px;z-index:99999;display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 14px 0 10px;border-radius:100px;border:1px solid " + laneLine + ";background:" + pillBg + ";color:" + ink + ";font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Helvetica Neue',Helvetica,Arial,sans-serif;font-size:13px;font-weight:600;text-decoration:none;letter-spacing:-.01em}" +
     "#ewi-home:hover{background:" + pillHover + "}" +
-    "#ewi-home .hic{width:22px;height:22px;border-radius:6px;background:" + (dark ? "#f5f5f7" : "#1d1d1f") + ";color:" + (dark ? "#1d1d1f" : "#fff") + ";font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;letter-spacing:-.03em}";
+    "#ewi-home .hic{width:22px;height:22px;border-radius:6px;background:" + (dark ? "#f5f5f7" : "#1d1d1f") + ";color:" + (dark ? "#1d1d1f" : "#fff") + ";font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;letter-spacing:-.03em}" +
+    // Responsive: tablets / small laptops tighten the pill; phones collapse the
+    // "EWI Home" wordmark to an icon-only circle so the header controls never
+    // overlap on small screens. Positioning of the theme + run-locally controls
+    // is recomputed from live widths by ewi-runhelp.js, so this stays in sync.
+    "@media (max-width:900px){#ewi-home{font-size:12px;padding:0 11px 0 8px;gap:6px}}" +
+    "@media (max-width:560px){#ewi-home{font-size:0;gap:0;width:34px;padding:0;justify-content:center}#ewi-home .hic{font-size:11px}}" +
+    "@media (pointer:coarse){#ewi-sw-panel a{padding:12px 4px}}";
   document.head.appendChild(css);
 
   if (!IS_HOME) {
