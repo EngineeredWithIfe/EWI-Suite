@@ -1,13 +1,18 @@
 /* ===========================================================================
    EWI Suite — Home view selector (Grid · List · Radial).
 
-   • Grid   — the classic card grid (unchanged).
+   • Grid   — the classic card grid; reorder by LONG-HOLDING a card, then
+              dragging it anywhere. Order is saved to this device.
    • List   — a vertical list you can reorder by LONG-HOLDING a row, then
               dragging it. Order is saved to this device.
    • Radial — a 16-sector wheel (a regular hexadecagon: 16 equal 22.5° slices).
               Product names stay UPRIGHT in every slice. Drag a slice onto
               another and the wheel flows the others around it — a fluid,
               Apple-esque motion. Order is saved to this device.
+
+   All three views share ONE persisted order (localStorage "ewi-home-order"):
+   reordering in any view is reflected in the others and survives closing the
+   browser, restarting the device, etc. — it is restored on the next visit.
 
    Zero dependencies. Progressive enhancement: if anything is unavailable the
    original grid remains fully usable. Respects prefers-reduced-motion and is
@@ -31,6 +36,7 @@
     if (!name) return;
     var color = "#0071e3";
     try { color = getComputedStyle(k || t).color || color; } catch (e) {}
+    t.setAttribute("data-name", name);
     items.push({
       name: name,
       href: t.getAttribute("data-href") || (t.querySelector("a") && t.querySelector("a").getAttribute("href")) || "#",
@@ -73,6 +79,130 @@
     else location.href = it.href;
   }
 
+  /* ===== GRID VIEW — reflect the shared order + long-hold drag reordering === */
+  // Physically reorder the real .tile cards so the Grid always shows the saved
+  // order (and any order set in List/Radial). Called on boot and on view-switch.
+  function applyGridOrder() {
+    order.forEach(function (it) {
+      var tile = GRID.querySelector('.tile[data-name="' + cssEsc(it.name) + '"]');
+      if (tile) GRID.appendChild(tile); // append in sequence → DOM order === order
+    });
+  }
+
+  var gridWired = false, gridLastDragEnd = 0;
+  function wireGridDrag() {
+    if (gridWired) return; gridWired = true;
+
+    // Swallow the click a browser fires right after a drag. Capture phase runs
+    // before each tile's own navigate-on-click handler, so this prevents an
+    // accidental navigation when the user was reordering.
+    GRID.addEventListener("click", function (e) {
+      if (Date.now() - gridLastDragEnd < 350) { e.stopPropagation(); e.preventDefault(); }
+    }, true);
+
+    var holdTimer = null, dragging = null, armed = null, downXY = null,
+        dragMoved = false, startX = 0, startY = 0;
+
+    function siblings() {
+      return Array.prototype.slice.call(GRID.querySelectorAll(".tile"))
+        .filter(function (n) { return n !== dragging; });
+    }
+
+    Array.prototype.forEach.call(GRID.querySelectorAll(".tile"), function (t) {
+      t.addEventListener("pointerdown", function (e) {
+        if (currentView !== "grid") return;
+        if (e.button != null && e.button !== 0) return;
+        if (e.target.closest("a")) return;          // let real links behave normally
+        armed = t; downXY = { x: e.clientX, y: e.clientY }; t.classList.add("armed");
+        holdTimer = setTimeout(function () { beginDrag(t, e); }, 300);
+      });
+      t.addEventListener("pointermove", function (e) {
+        // moving before the hold fires = a scroll/tap intent → cancel arming
+        if (!dragging && armed === t && downXY &&
+            Math.hypot(e.clientX - downXY.x, e.clientY - downXY.y) > 10) {
+          clearTimeout(holdTimer); t.classList.remove("armed"); armed = null;
+        }
+      });
+      t.addEventListener("pointerup", function () {
+        if (armed === t && !dragging) { clearTimeout(holdTimer); t.classList.remove("armed"); }
+        armed = null;
+      });
+      t.addEventListener("pointercancel", function () {
+        clearTimeout(holdTimer); t.classList.remove("armed"); armed = null;
+      });
+    });
+
+    function beginDrag(t, e) {
+      dragging = t; dragMoved = false;
+      t.classList.remove("armed"); t.classList.add("dragging");
+      var r = t.getBoundingClientRect(); startX = e.clientX; startY = e.clientY;
+      t.style.width = r.width + "px"; t.style.height = r.height + "px";
+      t.style.touchAction = "none";               // own the gesture once dragging
+      t.setPointerCapture && t.setPointerCapture(e.pointerId);
+      document.body.style.cursor = "grabbing";
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp, { once: true });
+    }
+
+    function onMove(e) {
+      if (!dragging) return;
+      dragMoved = true;
+      dragging.style.transform =
+        "translate(" + (e.clientX - startX) + "px," + (e.clientY - startY) + "px) scale(1.03)";
+
+      // Find the tile nearest the pointer and whether to drop before or after it.
+      var sibs = siblings(), closest = null, cdist = Infinity, after = false;
+      sibs.forEach(function (sib) {
+        var r = sib.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+        var dist = Math.hypot(e.clientX - cx, e.clientY - cy);
+        if (dist < cdist) {
+          cdist = dist; closest = sib;
+          after = (e.clientY > cy + r.height * 0.15) ||
+                  (Math.abs(e.clientY - cy) <= r.height / 2 && e.clientX > cx);
+        }
+      });
+      if (!closest) return;
+      var ref = after ? closest.nextSibling : closest;
+      if (ref === dragging) return;
+
+      // FLIP: capture sibling positions, reorder, then animate them from old→new.
+      var pre = {};
+      sibs.forEach(function (s) { var rr = s.getBoundingClientRect(); pre[s.getAttribute("data-name")] = { x: rr.left, y: rr.top }; });
+      var f = dragging.getBoundingClientRect();
+      GRID.insertBefore(dragging, ref);
+      var l = dragging.getBoundingClientRect();
+      startX += (l.left - f.left); startY += (l.top - f.top); // keep card under the pointer
+      dragging.style.transform =
+        "translate(" + (e.clientX - startX) + "px," + (e.clientY - startY) + "px) scale(1.03)";
+      if (reduce) return;
+      sibs.forEach(function (s) {
+        var was = pre[s.getAttribute("data-name")]; if (!was) return;
+        var now = s.getBoundingClientRect(), dx = was.x - now.x, dy = was.y - now.y;
+        if (!dx && !dy) return;
+        s.style.transition = "none"; s.style.transform = "translate(" + dx + "px," + dy + "px)";
+        requestAnimationFrame(function () { s.style.transition = ""; s.style.transform = ""; });
+      });
+    }
+
+    function onUp() {
+      window.removeEventListener("pointermove", onMove);
+      clearTimeout(holdTimer);
+      document.body.style.cursor = "";
+      if (dragging) {
+        var kept = dragging;
+        // Rebuild the shared order from the Grid's DOM sequence, then persist it.
+        order = Array.prototype.map.call(GRID.querySelectorAll(".tile"), function (n) {
+          return order.find(function (x) { return x.name === n.getAttribute("data-name"); });
+        }).filter(Boolean);
+        kept.classList.remove("dragging");
+        kept.style.transform = ""; kept.style.width = ""; kept.style.height = ""; kept.style.touchAction = "";
+        saveOrder(order);
+        if (dragMoved) gridLastDragEnd = Date.now();
+      }
+      dragging = null;
+    }
+  }
+
   /* -------- styles ---------------------------------------------------------- */
   var css = document.createElement("style");
   css.textContent =
@@ -84,6 +214,10 @@
     "#ewi-viewseg button.on{background:var(--bg,#fff);color:var(--ink,#0b0b0c);box-shadow:0 1px 4px rgba(0,0,0,.12)}" +
     "#ewi-viewseg button:focus-visible{outline:2px solid var(--accent,#0071e3);outline-offset:2px}" +
     "#ewi-viewseg svg{width:15px;height:15px}" +
+    /* grid reorder */
+    "#products .tile.armed{box-shadow:0 0 0 2px var(--accent,#0071e3) inset}" +
+    "#products .tile.dragging{z-index:6;box-shadow:0 18px 46px rgba(0,0,0,.26);cursor:grabbing;opacity:.98;transition:none}" +
+    "#products .tile{touch-action:pan-y}" +
     /* list */
     ".ewi-list{list-style:none;margin:0 auto;padding:0;max-width:720px;display:flex;flex-direction:column;gap:10px}" +
     ".ewi-row{display:flex;align-items:center;gap:14px;padding:14px 16px;border:1px solid var(--hair,#e6e6eb);" +
@@ -137,12 +271,15 @@
     GRID.style.display = v === "grid" ? "" : "none";
     if (listEl) listEl.style.display = v === "list" ? "" : "none";
     if (radialWrap) radialWrap.style.display = v === "radial" ? "" : "none";
-    if (hintEl) hintEl.style.display = (v === "list" || v === "radial") ? "" : "none";
+    if (hintEl) hintEl.style.display = "";
+    if (v === "grid") applyGridOrder();
     if (v === "list") buildList();
     if (v === "radial") buildRadial();
-    if (hintEl) hintEl.textContent = v === "list"
-      ? "Press and hold a row, then drag to reorder. Your order is saved on this device."
-      : (v === "radial" ? "Drag a slice onto another to rearrange the wheel. Your order is saved on this device." : "");
+    if (hintEl) hintEl.textContent = v === "grid"
+      ? "Press and hold a card, then drag to reorder. Your order is saved on this device."
+      : (v === "list"
+        ? "Press and hold a row, then drag to reorder. Your order is saved on this device."
+        : "Drag a slice onto another to rearrange the wheel. Your order is saved on this device.");
     if (save) { try { localStorage.setItem(VIEW_KEY, v); } catch (e) {} }
   }
   bar.addEventListener("click", function (e) {
@@ -470,6 +607,8 @@
   function cssEsc(s) { return String(s).replace(/["\\]/g, "\\$&"); }
 
   /* -------- boot ------------------------------------------------------------ */
+  wireGridDrag();      // enable long-hold drag reordering on the Grid cards
+  applyGridOrder();    // reflect the saved order in the Grid on first paint
   var initial = "grid";
   try { initial = localStorage.getItem(VIEW_KEY) || "grid"; } catch (e) {}
   if (initial !== "grid" && initial !== "list" && initial !== "radial") initial = "grid";
