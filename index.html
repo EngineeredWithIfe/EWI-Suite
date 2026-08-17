@@ -15,6 +15,7 @@
     --nav-bg:rgba(255,255,255,.85);
     --purple:#8a3ffc; --teal:#00a8a8; --green:#008009; --orange:#f56300;
     --red:#e30000; --magenta:#ff2d78; --amber:#e87d0d; --cyan:#00b3ab; --indigo:#4c8dff;
+    --pink:#ff375f;
     --love-grad:linear-gradient(96deg,#f56300,#e30000);
   }
   @media (prefers-color-scheme: dark){
@@ -23,6 +24,7 @@
       --accent:#7ec8ff; --baby:#a8d8ff;
       --purple:#c9a2ff; --teal:#40d0d0; --green:#5fd07a; --orange:#ff9f45;
       --red:#ff6b6b; --magenta:#ff6fa5; --amber:#ffb454; --cyan:#4fd8d0; --indigo:#8db4ff;
+      --pink:#ff7a97;
       --love-grad:linear-gradient(96deg,#ff9f45,#ff5a5f);
       --btn-grad:linear-gradient(135deg,#7ec8ff,#ffffff); --btn-text:#0b0b0c;
       --btn-ring:rgba(126,200,255,.4); --nav-bg:rgba(0,0,0,.72);
@@ -33,6 +35,7 @@
     --accent:#7ec8ff; --baby:#a8d8ff;
     --purple:#c9a2ff; --teal:#40d0d0; --green:#5fd07a; --orange:#ff9f45;
     --red:#ff6b6b; --magenta:#ff6fa5; --amber:#ffb454; --cyan:#4fd8d0; --indigo:#8db4ff;
+    --pink:#ff7a97;
     --love-grad:linear-gradient(96deg,#ff9f45,#ff5a5f);
     --btn-grad:linear-gradient(135deg,#7ec8ff,#ffffff); --btn-text:#0b0b0c;
     --btn-ring:rgba(126,200,255,.4); --nav-bg:rgba(0,0,0,.72);
@@ -84,6 +87,7 @@
   .tile.green .k{color:var(--green)} .tile.red .k{color:var(--red)}
   .tile.magenta .k{color:var(--magenta)} .tile.amber .k{color:var(--amber)}
   .tile.cyan .k{color:var(--cyan)} .tile.indigo .k{color:var(--indigo)}
+  .tile.pink .k{color:var(--pink)}
   section.band{background:var(--panel);margin-top:50px;padding:64px 22px}
   section.band .inner{max-width:900px;margin:0 auto;text-align:center}
   section.band h2{font-size:clamp(28px,4vw,40px);font-weight:700;letter-spacing:-.025em;margin:0 0 12px}
@@ -183,6 +187,15 @@
        titles, then <b>export</b> a high-quality MP4. Real editing with nothing uploaded — every frame stays on your device.</p>
     <div class="go"><a href="cut/">Open the app →</a></div>
   </div>
+  <div class="tile pink" data-href="pulse/">
+    <div class="k">Video · Beat-sync</div>
+    <h2>EWI Pulse</h2>
+    <p>Drop in a pile of photos and clips, add a song — upload it or paste a link (the same
+       private engine that powers EWI Reel) — pick a length, and Pulse auto-edits a
+       viral-ready cut whose <b>cuts land on the beats</b>, punch on the kicks, and flash on the
+       <b>drops</b>. The edit follows the music. Every frame stays on your device.</p>
+    <div class="go"><a href="pulse/">Open the app →</a></div>
+  </div>
   <div class="tile indigo" data-href="stat/">
     <div class="k">Analysis</div>
     <h2>EWI Stat</h2>
@@ -230,14 +243,14 @@
 <section class="band" id="platforms">
   <div class="inner">
     <h2>One family. Every screen.</h2>
-    <p>One family of tools — fifteen today and growing — each built from first principles on
+    <p>One family of tools — sixteen today and growing — each built from first principles on
        EWI's own engines, with nothing that phones home.</p>
   </div>
 </section>
 
 <footer>
   EWI — Engineered With Ife™ · “Ife” [Yoruba] = <span class="love">“Love”</span> [English]<br>
-  Browser Cloud · Flow Dictation · ClipForge · EWI Reel · EWI Grid · EWI Cosmos · EWI Matrix · EWI Forge · EWI Cut · EWI Stat · NAVLINQ · EWI Mind · EWI Lens · EWI Scholar
+  Browser Cloud · Flow Dictation · ClipForge · EWI Reel · EWI Grid · EWI Cosmos · EWI Matrix · EWI Forge · EWI Cut · EWI Pulse · EWI Stat · NAVLINQ · EWI Mind · EWI Lens · EWI Scholar
 </footer>
 <script src="ewi-switcher.js" defer></script>
 <script src="ewi-home-update.js" defer></script>

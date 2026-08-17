@@ -1,0 +1,655 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<script src="../ewi-theme.js"></script>
+<title>EWI Pulse — beat-synced viral clips</title>
+<meta name="description" content="Drop in photos and video clips, add a song (upload or paste a link), pick a length — EWI Pulse auto-edits a viral-ready clip whose cuts land on the beats, drops, and intensity of the music. Everything runs in your browser." />
+<style>
+  :root{
+    --bg:#0e0f13; --panel:#16181f; --panel2:#1d2029; --ink:#eef2f7; --muted:#93a0b0;
+    --line:#2a2f3a; --accent:#ff375f; --accent2:#ff6b8a; --focus:#7cc0ff;
+    --chip:#232833; --good:#2fd67a; --warn:#ffb020;
+    --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:13px;overflow:hidden}
+  button,select,input,textarea{font-family:inherit;color:inherit}
+  button{cursor:pointer}
+  :focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:6px}
+  .skip{position:absolute;left:-999px;top:0;background:var(--accent);color:#2a0410;padding:8px 12px;border-radius:8px;z-index:60;font-weight:700}
+  .skip:focus{left:8px;top:8px}
+  a{color:var(--accent2)}
+
+  header{display:flex;align-items:center;gap:11px;padding:8px 14px;border-bottom:1px solid var(--line);
+    background:linear-gradient(180deg,#15171f,#0e0f13);position:relative;z-index:6}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:700}
+  .brand .mk{width:28px;height:28px;border-radius:9px;display:grid;place-items:center;color:#2a0410;font-weight:800;
+    background:linear-gradient(135deg,var(--accent),#ff8aa3);box-shadow:0 2px 12px rgba(255,55,95,.4)}
+  .brand small{display:block;color:var(--muted);font-weight:500;font-size:10.5px}
+  .htools{margin-left:auto;display:flex;align-items:center;gap:8px}
+  .hbtn{background:var(--chip);border:1px solid var(--line);border-radius:9px;padding:7px 13px;font-size:12.5px;font-weight:700}
+  .hbtn:hover{border-color:var(--accent);color:#fff}
+  .hbtn.primary{background:linear-gradient(135deg,var(--accent),#e11d48);border:none;color:#fff}
+  .hbtn.primary:disabled{opacity:.45;cursor:not-allowed}
+
+  .app{display:grid;grid-template-columns:300px 1fr 288px;height:calc(100% - 46px)}
+  .col{overflow:auto;background:var(--panel)}
+  .left{border-right:1px solid var(--line)} .right{border-left:1px solid var(--line)}
+  .stage{display:flex;flex-direction:column;background:#08090c;min-width:0}
+  .sec{border-bottom:1px solid var(--line);padding:13px 13px}
+  .sec h3{margin:0 0 10px;font-size:10.5px;letter-spacing:.8px;text-transform:uppercase;color:var(--muted);display:flex;justify-content:space-between;align-items:center}
+  .sec h3 .cnt{color:var(--accent2);font-family:var(--mono);font-size:11px}
+
+  .drop{border:1.5px dashed var(--line);border-radius:12px;padding:16px 12px;text-align:center;color:var(--muted);
+    background:var(--panel2);transition:border-color .15s,background .15s}
+  .drop.drag{border-color:var(--accent);background:#241820;color:var(--ink)}
+  .drop b{color:var(--ink)} .drop .big{font-size:20px;margin-bottom:6px}
+  .btnrow{display:flex;gap:7px;margin-top:9px}
+  .mini{flex:1;background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:9px 6px;font-size:11.5px;font-weight:600}
+  .mini:hover{border-color:var(--accent);background:#242a34}
+
+  .pool{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:11px}
+  .pitem{position:relative;aspect-ratio:1;border-radius:8px;overflow:hidden;background:#000;border:1px solid var(--line)}
+  .pitem img,.pitem video{width:100%;height:100%;object-fit:cover;display:block}
+  .pitem .tag{position:absolute;left:4px;bottom:4px;background:rgba(0,0,0,.66);color:#fff;font-size:9px;
+    padding:1px 5px;border-radius:5px;font-weight:700;letter-spacing:.4px}
+  .pitem .rm{position:absolute;top:3px;right:3px;width:20px;height:20px;border:none;border-radius:6px;
+    background:rgba(0,0,0,.6);color:#fff;font-size:13px;line-height:1;display:grid;place-items:center}
+  .pitem .rm:hover{background:var(--accent)}
+  .empty{color:var(--muted);font-size:12px;line-height:1.55;margin-top:10px}
+
+  .tabs{display:flex;gap:6px;margin-bottom:10px}
+  .tab{flex:1;background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:8px;font-size:12px;font-weight:700;color:var(--muted)}
+  .tab.on{border-color:var(--accent);color:var(--ink);background:#241820}
+  .tab:disabled{opacity:.4;cursor:not-allowed}
+  .tinput{width:100%;background:#0b0d12;border:1px solid var(--line);border-radius:9px;padding:9px 10px;font-size:12.5px;color:var(--ink)}
+  .tinput::placeholder{color:#5c6675}
+  .audio-card{margin-top:10px;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px;display:none}
+  .audio-card.show{display:block}
+  .audio-card .nm{font-weight:700;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .audio-card .meta{color:var(--muted);font-size:11px;margin-top:3px;font-family:var(--mono)}
+  #wave{width:100%;height:44px;margin-top:8px;display:block;border-radius:6px;background:#0b0d12}
+  .note{color:var(--warn);font-size:11px;margin-top:8px;line-height:1.5}
+
+  .stage .pv{flex:1;display:grid;place-items:center;padding:16px;min-height:0}
+  #preview{background:#000;border-radius:12px;box-shadow:0 8px 40px rgba(0,0,0,.6);max-width:100%;max-height:100%}
+  .transport{display:flex;align-items:center;gap:12px;padding:10px 16px;border-top:1px solid var(--line);background:var(--panel)}
+  .tbtn{background:var(--chip);border:1px solid var(--line);border-radius:10px;width:38px;height:34px;display:grid;place-items:center;font-size:15px}
+  .tbtn.play{width:46px;background:linear-gradient(135deg,var(--accent),#e11d48);border:none;color:#fff}
+  .tbtn:disabled{opacity:.4;cursor:not-allowed}
+  .tc{font-family:var(--mono);font-size:12px;color:var(--muted)}
+  .tc b{color:var(--ink)}
+  .bar{flex:1;height:6px;border-radius:4px;background:#20242e;overflow:hidden}
+  .bar > i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--accent2))}
+
+  .field{margin-bottom:14px}
+  .field label{display:flex;justify-content:space-between;color:var(--muted);font-size:11px;margin-bottom:6px}
+  .field label b{color:var(--ink);font-family:var(--mono);font-weight:700}
+  input[type=range]{width:100%;accent-color:var(--accent);height:20px}
+  .segbtns{display:flex;gap:6px}
+  .segbtns button{flex:1;background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:8px 4px;font-size:11.5px;font-weight:700;color:var(--muted)}
+  .segbtns button.on{border-color:var(--accent);color:var(--ink);background:#241820}
+  .stat{display:flex;justify-content:space-between;font-size:11.5px;padding:5px 0;border-bottom:1px solid var(--line)}
+  .stat:last-child{border:none} .stat b{font-family:var(--mono)}
+  .primary-lg{width:100%;margin-top:6px;padding:12px;border:none;border-radius:11px;font-size:14px;font-weight:800;
+    background:linear-gradient(135deg,var(--accent),#e11d48);color:#fff}
+  .primary-lg:disabled{opacity:.45;cursor:not-allowed}
+  .status{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);background:#0b0d12;border:1px solid var(--line);
+    border-radius:10px;padding:9px 16px;font-size:12.5px;box-shadow:0 8px 30px rgba(0,0,0,.5);z-index:40;max-width:80vw;
+    opacity:0;pointer-events:none;transition:opacity .2s}
+  .status.show{opacity:1}
+  .hidden{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
+  @media (max-width:1000px){ .app{grid-template-columns:1fr;grid-auto-rows:min-content} .stage{min-height:56vh} }
+</style>
+</head>
+<body>
+<a class="skip" href="#stage">Skip to preview</a>
+
+<header>
+  <div class="brand">
+    <div class="mk" aria-hidden="true">Pu</div>
+    <div>EWI Pulse<small>Beat-synced viral clips — in your browser</small></div>
+  </div>
+  <div class="htools">
+    <button class="hbtn" id="resetBtn" type="button">Reset</button>
+    <button class="hbtn primary" id="exportBtn" type="button" disabled>Export MP4</button>
+  </div>
+</header>
+
+<div class="app">
+  <!-- LEFT: media + audio ------------------------------------------------ -->
+  <section class="col left" aria-label="Media and audio">
+    <div class="sec">
+      <h3>Media <span class="cnt" id="mediaCnt">0 clips</span></h3>
+      <div class="drop" id="drop" tabindex="0" role="button" aria-label="Add photos and videos">
+        <div class="big" aria-hidden="true">✚</div>
+        <b>Drop photos &amp; videos</b><br>or click to browse — any mix, any count
+      </div>
+      <div class="btnrow">
+        <button class="mini" id="addPhotos" type="button">Add photos</button>
+        <button class="mini" id="addVideos" type="button">Add videos</button>
+      </div>
+      <div class="pool" id="pool"></div>
+      <div class="empty" id="poolEmpty">Your photos and clips stay on this device — nothing is uploaded. Pulse reuses them across the timeline and cuts between them on the beat.</div>
+    </div>
+
+    <div class="sec">
+      <h3>Soundtrack</h3>
+      <div class="tabs" role="tablist">
+        <button class="tab on" id="tabUpload" type="button" role="tab" aria-selected="true">Upload</button>
+        <button class="tab" id="tabLink" type="button" role="tab" aria-selected="false">Paste a link</button>
+      </div>
+      <div id="paneUpload">
+        <button class="mini" id="addAudio" type="button" style="width:100%">Choose an audio file (MP3, WAV, M4A…)</button>
+      </div>
+      <div id="paneLink" style="display:none">
+        <input class="tinput" id="linkInput" type="url" inputmode="url" placeholder="Paste a link to a sound (YouTube, etc.)" aria-label="Link to a sound" />
+        <div class="btnrow"><button class="mini" id="fetchAudio" type="button" style="width:100%">Fetch audio</button></div>
+        <div class="note" id="linkNote" style="display:none"></div>
+      </div>
+      <div class="audio-card" id="audioCard">
+        <div class="nm" id="audioName">—</div>
+        <div class="meta" id="audioMeta">—</div>
+        <canvas id="wave" width="560" height="88" aria-hidden="true"></canvas>
+      </div>
+    </div>
+  </section>
+
+  <!-- CENTER: preview ---------------------------------------------------- -->
+  <section class="stage" id="stage" aria-label="Preview">
+    <div class="pv"><canvas id="preview" width="720" height="1280"></canvas></div>
+    <div class="transport">
+      <button class="tbtn play" id="playBtn" type="button" aria-label="Play preview" disabled>▶</button>
+      <div class="tc"><b id="tcCur">0:00</b> / <span id="tcTot">0:00</span></div>
+      <div class="bar"><i id="progFill"></i></div>
+      <div class="tc" id="bpmTag">—</div>
+    </div>
+  </section>
+
+  <!-- RIGHT: settings ---------------------------------------------------- -->
+  <section class="col right" aria-label="Settings">
+    <div class="sec">
+      <h3>Clip</h3>
+      <div class="field">
+        <label for="lenRange">Final length <b><span id="lenVal">15</span>s</b></label>
+        <input type="range" id="lenRange" min="5" max="60" step="1" value="15" />
+      </div>
+      <div class="field">
+        <label for="startRange">Start in song <b><span id="startVal">0:00</span></b></label>
+        <input type="range" id="startRange" min="0" max="0" step="0.5" value="0" />
+      </div>
+      <div class="field">
+        <label>Aspect ratio</label>
+        <div class="segbtns" id="aspectSeg">
+          <button data-a="9:16" class="on" type="button">9:16</button>
+          <button data-a="1:1" type="button">1:1</button>
+          <button data-a="16:9" type="button">16:9</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>Cut energy</label>
+        <div class="segbtns" id="energySeg">
+          <button data-e="chill" type="button">Chill</button>
+          <button data-e="balanced" class="on" type="button">Balanced</button>
+          <button data-e="hype" type="button">Hype</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="sec">
+      <h3>Beat analysis</h3>
+      <div class="stat"><span>Tempo</span><b id="stBpm">—</b></div>
+      <div class="stat"><span>Beats detected</span><b id="stBeats">—</b></div>
+      <div class="stat"><span>Drops</span><b id="stDrops">—</b></div>
+      <div class="stat"><span>Cuts in clip</span><b id="stCuts">—</b></div>
+      <div class="stat"><span>Clips used</span><b id="stUsed">—</b></div>
+    </div>
+
+    <div class="sec">
+      <button class="primary-lg" id="syncBtn" type="button" disabled>Auto-sync the cut</button>
+      <div class="empty" style="margin-top:10px">Cuts snap to detected beats; shots run shorter through high-intensity sections and drops, longer through calm ones — the “editing follows the music.”</div>
+    </div>
+  </section>
+</div>
+
+<div class="status" id="status" role="status" aria-live="polite"></div>
+
+<input id="filePhotos" class="hidden" type="file" accept="image/*" multiple />
+<input id="fileVideos" class="hidden" type="file" accept="video/*" multiple />
+<input id="fileAudio"  class="hidden" type="file" accept="audio/*" />
+<div id="videoStore" class="hidden" aria-hidden="true"></div>
+
+<script src="../ewi-switcher.js"></script>
+<script>
+"use strict";
+(function(){
+  /* ---------------------------------------------------------------- state */
+  var media = [];            // {id,type,el,w,h,dur,name}
+  var audio = { buffer:null, name:"", analysis:null };
+  var plan  = { shots:[], length:15 };
+  var settings = { length:15, start:0, aspect:"9:16", energy:"balanced" };
+  var AC=null, src=null, gain=null, recDest=null, playStart=0, raf=0, playing=false;
+  var uid=0;
+
+  var $=function(id){return document.getElementById(id);};
+  var pcv=$("preview"), pctx=pcv.getContext("2d");
+  var ASPECTS={ "9:16":[720,1280], "1:1":[900,900], "16:9":[1280,720] };
+
+  function toast(msg){ var s=$("status"); s.textContent=msg; s.classList.add("show");
+    clearTimeout(toast._t); toast._t=setTimeout(function(){s.classList.remove("show");},2600); }
+  function fmt(t){ t=Math.max(0,t||0); var m=Math.floor(t/60), s=Math.floor(t%60); return m+":"+(s<10?"0":"")+s; }
+  function clamp(v,a,b){ return v<a?a:(v>b?b:v); }
+  function ensureAC(){ if(!AC){ AC=new (window.AudioContext||window.webkitAudioContext)(); } return AC; }
+
+  /* --------------------------------------------------------------- media */
+  function addImage(file){
+    var url=URL.createObjectURL(file), img=new Image();
+    img.onload=function(){ media.push({id:++uid,type:"image",el:img,w:img.naturalWidth,h:img.naturalHeight,dur:0,name:file.name});
+      renderPool(); afterMediaChange(); };
+    img.onerror=function(){ toast("Couldn't read "+file.name); };
+    img.src=url;
+  }
+  function addVideo(file){
+    var url=URL.createObjectURL(file), v=document.createElement("video");
+    v.muted=true; v.playsInline=true; v.loop=true; v.preload="auto"; v.src=url;
+    v.onloadedmetadata=function(){ media.push({id:++uid,type:"video",el:v,w:v.videoWidth,h:v.videoHeight,dur:v.duration,name:file.name});
+      $("videoStore").appendChild(v); renderPool(); afterMediaChange(); };
+    v.onerror=function(){ toast("Couldn't read "+file.name); };
+  }
+  function addFiles(list){
+    var arr=Array.prototype.slice.call(list||[]);
+    arr.forEach(function(f){ if(f.type.indexOf("image/")===0) addImage(f);
+      else if(f.type.indexOf("video/")===0) addVideo(f); });
+  }
+  function removeMedia(id){
+    var i=media.findIndex(function(m){return m.id===id;});
+    if(i>=0){ var m=media[i]; if(m.type==="video"&&m.el.parentNode) m.el.parentNode.removeChild(m.el);
+      media.splice(i,1); renderPool(); afterMediaChange(); }
+  }
+  function renderPool(){
+    var pool=$("pool"); pool.innerHTML="";
+    media.forEach(function(m){
+      var d=document.createElement("div"); d.className="pitem";
+      if(m.type==="image"){ var im=document.createElement("img"); im.src=m.el.src; im.alt=m.name; d.appendChild(im); }
+      else { var vi=document.createElement("video"); vi.src=m.el.src; vi.muted=true; vi.playsInline=true; d.appendChild(vi); }
+      var tag=document.createElement("span"); tag.className="tag"; tag.textContent=m.type==="video"?"VIDEO":"PHOTO"; d.appendChild(tag);
+      var rm=document.createElement("button"); rm.className="rm"; rm.type="button"; rm.setAttribute("aria-label","Remove "+m.name);
+      rm.textContent="×"; rm.onclick=function(){ removeMedia(m.id); }; d.appendChild(rm);
+      pool.appendChild(d);
+    });
+    $("mediaCnt").textContent=media.length+(media.length===1?" clip":" clips");
+    $("poolEmpty").style.display=media.length?"none":"block";
+  }
+  function afterMediaChange(){ updateReady(); if(canSync()) planCuts(); drawStatic(); }
+
+  /* --------------------------------------------------------------- audio */
+  function setAudioBuffer(buffer,name){
+    audio.buffer=buffer; audio.name=name;
+    $("audioCard").classList.add("show");
+    $("audioName").textContent=name;
+    $("audioMeta").textContent="Analyzing…";
+    var maxStart=Math.max(0, buffer.duration-3);
+    var sr=$("startRange"); sr.max=maxStart.toFixed(1);
+    drawWave(buffer);
+    analyzeAudio(buffer).then(function(a){
+      audio.analysis=a;
+      $("audioMeta").textContent=fmt(buffer.duration)+" · "+Math.round(a.bpm)+" BPM · "+a.beats.length+" beats";
+      $("bpmTag").textContent=Math.round(a.bpm)+" BPM";
+      $("stBpm").textContent=Math.round(a.bpm)+" BPM";
+      $("stBeats").textContent=a.beats.length;
+      $("stDrops").textContent=a.drops.length;
+      updateReady(); if(canSync()) planCuts(); drawStatic();
+      toast("Analyzed — "+Math.round(a.bpm)+" BPM, "+a.beats.length+" beats");
+    }).catch(function(e){ $("audioMeta").textContent="Analysis failed"; toast("Couldn't analyze that audio."); });
+  }
+  function decodeArrayBuffer(ab,name){
+    ensureAC().decodeAudioData(ab.slice(0), function(buf){ setAudioBuffer(buf,name); },
+      function(){ toast("That audio couldn't be decoded."); });
+  }
+  function loadAudioFile(file){
+    var rd=new FileReader(); rd.onload=function(){ decodeArrayBuffer(rd.result,file.name); }; rd.readAsArrayBuffer(file);
+  }
+
+  /* ---- optional backend link-fetch (shared engine with EWI Reel) ------ */
+  function checkBackend(){
+    fetch("/api/health").then(function(r){return r.json();}).then(function(h){
+      if(!h||!h.ok){ disableLink(h&&h.yt_dlp===false ? "Run Pulse locally with yt-dlp + ffmpeg installed to pull audio from a link. Uploading an audio file works everywhere." : "Link-fetch needs the local Pulse server. You can upload an audio file here."); }
+    }).catch(function(){ disableLink("Link-fetch needs the local Pulse server (python3 serve.py 8713). You can upload an audio file here."); });
+  }
+  function disableLink(msg){
+    $("tabLink").disabled=true; var n=$("linkNote"); n.style.display="block"; n.textContent=msg;
+    $("linkInput").disabled=true; $("fetchAudio").disabled=true;
+  }
+  function fetchAudioLink(){
+    var url=($("linkInput").value||"").trim(); if(!url){ toast("Paste a link first."); return; }
+    $("fetchAudio").disabled=true; $("fetchAudio").textContent="Fetching…";
+    fetch("/api/fetch",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:url})})
+      .then(function(r){return r.json().then(function(j){return {ok:r.ok,j:j};});})
+      .then(function(res){
+        if(!res.ok||!res.j.job){ throw new Error(res.j.error||"Fetch failed"); }
+        pollJob(res.j.job.id);
+      }).catch(function(e){ endFetch(); toast(e.message||"Fetch failed."); });
+  }
+  function endFetch(){ $("fetchAudio").disabled=false; $("fetchAudio").textContent="Fetch audio"; }
+  function pollJob(id){
+    fetch("/api/progress?job="+encodeURIComponent(id)).then(function(r){return r.json();}).then(function(p){
+      if(p.error){ endFetch(); toast(p.error); return; }
+      $("fetchAudio").textContent=(p.status||"Fetching…")+" "+(p.pct||0)+"%";
+      if(p.done){
+        var mp3=(p.files||[]).filter(function(f){return f.which==="mp3";})[0];
+        if(!mp3){ endFetch(); toast("No audio produced."); return; }
+        fetch(mp3.url).then(function(r){return r.arrayBuffer();}).then(function(ab){
+          endFetch(); decodeArrayBuffer(ab, p.title? p.title+".mp3" : mp3.name);
+        });
+        return;
+      }
+      setTimeout(function(){ pollJob(id); }, 600);
+    }).catch(function(){ endFetch(); toast("Lost the fetch job."); });
+  }
+
+  /* ----------------------------------------------------- audio analysis */
+  function toMono(buf){
+    var n=buf.length, out=new Float32Array(n), ch=buf.numberOfChannels;
+    for(var c=0;c<ch;c++){ var d=buf.getChannelData(c); for(var i=0;i<n;i++) out[i]+=d[i]/ch; }
+    return out;
+  }
+  function renderFiltered(buf, type, freq){
+    var Off=window.OfflineAudioContext||window.webkitOfflineAudioContext;
+    var oc=new Off(1, buf.length, buf.sampleRate);
+    var s=oc.createBufferSource(); s.buffer=buf;
+    var f=oc.createBiquadFilter(); f.type=type; f.frequency.value=freq; f.Q.value=0.7;
+    s.connect(f); f.connect(oc.destination); s.start(0);
+    return oc.startRendering();
+  }
+  function maxOf(arr){ var m=1e-9; for(var i=0;i<arr.length;i++) if(arr[i]>m) m=arr[i]; return m; }
+  function estimateBPM(flux, frameT){
+    var minLag=Math.round(0.30/frameT), maxLag=Math.round(1.0/frameT), best=minLag, bestv=-1;
+    for(var lag=minLag; lag<=maxLag; lag++){
+      var sum=0; for(var i=lag;i<flux.length;i++) sum+=flux[i]*flux[i-lag];
+      if(sum>bestv){ bestv=sum; best=lag; }
+    }
+    var bpm=60/(best*frameT);
+    while(bpm<90) bpm*=2; while(bpm>176) bpm/=2;
+    return bpm;
+  }
+  function analyzeAudio(buf){
+    var sr=buf.sampleRate, mono=toMono(buf);
+    return renderFiltered(buf,"lowpass",150).then(function(bassBuf){
+      var bmono=toMono(bassBuf);
+      var hop=512, win=1024, nF=Math.max(1,Math.floor((mono.length-win)/hop));
+      var env=new Float32Array(nF), benv=new Float32Array(nF), frameT=hop/sr;
+      for(var i=0;i<nF;i++){
+        var s=0,bs=0,off=i*hop;
+        for(var j=0;j<win;j++){ var x=mono[off+j]||0; s+=x*x; var b=bmono[off+j]||0; bs+=b*b; }
+        env[i]=Math.sqrt(s/win); benv[i]=Math.sqrt(bs/win);
+      }
+      // onset flux from bass
+      var flux=new Float32Array(nF);
+      for(var k=1;k<nF;k++){ var d=benv[k]-benv[k-1]; flux[k]=d>0?d:0; }
+      // adaptive peak-pick
+      var beats=[], W=Math.max(2,Math.round(0.25/frameT)), lastB=-1e9;
+      for(var p=1;p<nF-1;p++){
+        var m=0,c=0; for(var q=p-W;q<=p+W;q++){ if(q>=0&&q<nF){ m+=flux[q]; c++; } }
+        m/=Math.max(1,c);
+        if(flux[p]>m*1.6+1e-4 && flux[p]>=flux[p-1] && flux[p]>=flux[p+1]){
+          var t=p*frameT; if(t-lastB>0.16){ beats.push(t); lastB=t; }
+        }
+      }
+      var bpm=estimateBPM(flux,frameT);
+      // fall back to a steady grid if detection was sparse (ambient material)
+      if(beats.length < Math.max(6, buf.duration/2)){
+        var per=60/bpm; for(var g=0; g<buf.duration; g+=per){ beats.push(g); }
+        beats.sort(function(a,b){return a-b;});
+        var dd=[]; for(var z=0;z<beats.length;z++){ if(!dd.length||beats[z]-dd[dd.length-1]>0.12) dd.push(beats[z]); } beats=dd;
+      }
+      // normalized bass intensity envelope (smoothed)
+      var bmax=maxOf(benv), inten=new Float32Array(nF);
+      var sm=0, aA=0.2;
+      for(var r=0;r<nF;r++){ var v=benv[r]/bmax; sm=sm+aA*(v-sm); inten[r]=sm; }
+      function intensityAt(tt){ var idx=clamp(Math.floor(tt/frameT),0,nF-1); return inten[idx]; }
+      // drops: strong sustained bass rise after a lull
+      var drops=[], lowRun=0;
+      for(var s2=1;s2<nF;s2++){
+        if(inten[s2]<0.30) lowRun++;
+        if(inten[s2]>0.62 && inten[s2-1]<=0.62 && lowRun>Math.round(0.8/frameT)){
+          drops.push(s2*frameT); lowRun=0;
+        }
+      }
+      return { beats:beats, bpm:bpm, dur:buf.duration, drops:drops, intensityAt:intensityAt };
+    });
+  }
+
+  /* --------------------------------------------------------- cut planning */
+  function canSync(){ return media.length>0 && audio.buffer && audio.analysis; }
+  function shuffled(n){ var a=[]; for(var i=0;i<n;i++)a.push(i); for(var j=n-1;j>0;j--){ var k=Math.floor(Math.random()*(j+1)); var t=a[j];a[j]=a[k];a[k]=t; } return a; }
+  function planCuts(){
+    if(!canSync()) return;
+    var L=settings.length, off=settings.start, A=audio.analysis;
+    var base=({chill:1.5,balanced:1.0,hype:0.62})[settings.energy];
+    var minShot=0.16, maxShot=2.8;
+    // candidate cut points = detected beats within the window, window-relative
+    var cands=A.beats.filter(function(t){return t>=off-1e-3 && t<=off+L+1e-3;}).map(function(t){return t-off;});
+    if(!cands.length || cands[0]>0.05) cands.unshift(0);
+    cands.push(L);
+    var shots=[], order=shuffled(media.length), mi=0, t=0, guard=0;
+    while(t<L-0.03 && guard++<2000){
+      var inten=A.intensityAt(off+t);
+      var target=clamp(base*(1.35-inten), minShot, maxShot);
+      var wantEnd=t+target;
+      var snap=null;
+      for(var c=0;c<cands.length;c++){ if(cands[c]>=t+Math.max(minShot,target*0.55)){ snap=cands[c]; break; } }
+      var end=(snap==null)? Math.min(L,wantEnd) : Math.min(L,snap);
+      if(end-t<minShot) end=Math.min(L,t+minShot);
+      shots.push({start:t,dur:end-t,media:order[mi%order.length],dir:(mi%2?1:-1),
+        zoom:0.05+inten*0.14, kb:0.045+Math.random()*0.06});
+      mi++; t=end;
+    }
+    plan.shots=shots; plan.length=L;
+    $("stCuts").textContent=shots.length;
+    $("stUsed").textContent=Math.min(media.length,new Set(shots.map(function(s){return s.media;})).size)+" / "+media.length;
+  }
+
+  /* ------------------------------------------------------------- renderer */
+  function setAspect(a){
+    settings.aspect=a; var d=ASPECTS[a]; pcv.width=d[0]; pcv.height=d[1]; drawStatic();
+  }
+  function drawCover(m, scale, dir, panP){
+    var W=pcv.width,H=pcv.height, sw=m.w||m.el.videoWidth||m.el.naturalWidth||1, sh=m.h||m.el.videoHeight||m.el.naturalHeight||1;
+    var cover=Math.max(W/sw,H/sh)*scale, dw=sw*cover, dh=sh*cover;
+    var px=(W-dw)/2 + dir*(dw-W)*0.5*panP, py=(H-dh)/2;
+    try{ pctx.drawImage(m.el, px, py, dw, dh); }catch(e){}
+  }
+  function nearest(arr, t){ // greatest value <= t
+    var lo=0,hi=arr.length-1,res=null;
+    while(lo<=hi){ var mid=(lo+hi)>>1; if(arr[mid]<=t){ res=arr[mid]; lo=mid+1; } else hi=mid-1; }
+    return res;
+  }
+  function shotAt(t){ for(var i=0;i<plan.shots.length;i++){ var s=plan.shots[i]; if(t>=s.start && t<s.start+s.dur) return s; } return plan.shots[plan.shots.length-1]||null; }
+  function drawFrame(tSeg){
+    var W=pcv.width,H=pcv.height;
+    pctx.fillStyle="#000"; pctx.fillRect(0,0,W,H);
+    var shot=shotAt(tSeg); if(!shot){ vignette(); return; }
+    var m=media[shot.media]; if(!m){ vignette(); return; }
+    var lt=tSeg-shot.start, p=shot.dur>0?lt/shot.dur:0;
+    var scale=1+shot.kb*p;
+    var absT=settings.start+tSeg;
+    if(audio.analysis){
+      var nb=nearest(audio.analysis.beats,absT);
+      if(nb!=null){ var dt=absT-nb; var inten=audio.analysis.intensityAt(absT);
+        scale*= 1 + shot.zoom*inten*Math.exp(-dt/0.10); }
+    }
+    drawCover(m, scale, shot.dir, p);
+    // drop flash
+    if(audio.analysis && audio.analysis.drops.length){
+      var nd=nearest(audio.analysis.drops,absT);
+      if(nd!=null){ var dd=absT-nd; if(dd>=0 && dd<0.28){ pctx.save(); pctx.globalAlpha=0.55*(1-dd/0.28);
+        pctx.fillStyle="#fff"; pctx.fillRect(0,0,W,H); pctx.restore(); } }
+    }
+    vignette();
+  }
+  function vignette(){
+    var W=pcv.width,H=pcv.height, g=pctx.createRadialGradient(W/2,H/2,H*0.35,W/2,H/2,H*0.72);
+    g.addColorStop(0,"rgba(0,0,0,0)"); g.addColorStop(1,"rgba(0,0,0,0.32)");
+    pctx.fillStyle=g; pctx.fillRect(0,0,W,H);
+  }
+  function drawStatic(){
+    var W=pcv.width,H=pcv.height; pctx.fillStyle="#000"; pctx.fillRect(0,0,W,H);
+    if(plan.shots.length){ drawFrame(0); }
+    else {
+      pctx.fillStyle="#3a4150"; pctx.textAlign="center"; pctx.font="600 "+Math.round(W*0.036)+"px -apple-system,Segoe UI,Roboto,sans-serif";
+      pctx.fillText(media.length?"Add a song to sync":"Add media + a song", W/2, H/2-6);
+      pctx.font="500 "+Math.round(W*0.026)+"px -apple-system,Segoe UI,Roboto,sans-serif";
+      pctx.fillText("then press Auto-sync", W/2, H/2+Math.round(W*0.05));
+    }
+    $("tcTot").textContent=fmt(plan.length||settings.length);
+  }
+
+  /* -------------------------------------------------------------- preview */
+  function startVideos(){ media.forEach(function(m){ if(m.type==="video"){ try{ m.el.currentTime=0; var pr=m.el.play(); if(pr&&pr.catch)pr.catch(function(){}); }catch(e){} } }); }
+  function stopVideos(){ media.forEach(function(m){ if(m.type==="video"){ try{ m.el.pause(); }catch(e){} } }); }
+  function stopSource(){ if(src){ try{src.stop();}catch(e){} src=null; } }
+  function play(){
+    if(!canSync()||!plan.shots.length){ toast("Auto-sync first."); return; }
+    ensureAC(); AC.resume&&AC.resume();
+    stopSource();
+    src=AC.createBufferSource(); src.buffer=audio.buffer;
+    gain=AC.createGain(); gain.gain.value=1; src.connect(gain); gain.connect(AC.destination);
+    playStart=AC.currentTime; playing=true; $("playBtn").textContent="⏸"; $("playBtn").setAttribute("aria-label","Pause");
+    startVideos(); src.start(0, settings.start);
+    src.onended=function(){ if(playing) stop(); };
+    loop();
+  }
+  function loop(){
+    if(!playing) return;
+    var t=AC.currentTime-playStart;
+    if(t>=plan.length){ stop(); return; }
+    drawFrame(t); updateTC(t);
+    raf=requestAnimationFrame(loop);
+  }
+  function stop(){
+    playing=false; cancelAnimationFrame(raf); stopSource(); stopVideos();
+    $("playBtn").textContent="▶"; $("playBtn").setAttribute("aria-label","Play preview");
+    drawFrame(0); updateTC(0);
+  }
+  function updateTC(t){ $("tcCur").textContent=fmt(t); $("progFill").style.width=(100*clamp(t/(plan.length||1),0,1))+"%"; }
+
+  /* --------------------------------------------------------------- export */
+  function pickMime(){
+    var c=["video/mp4;codecs=avc1.640028,mp4a.40.2","video/mp4;codecs=avc1.42E01E,mp4a.40.2","video/mp4",
+           "video/webm;codecs=vp9,opus","video/webm;codecs=vp8,opus","video/webm"];
+    for(var i=0;i<c.length;i++){ if(window.MediaRecorder && MediaRecorder.isTypeSupported(c[i])) return c[i]; }
+    return "";
+  }
+  function exportClip(){
+    if(!canSync()||!plan.shots.length){ toast("Auto-sync first."); return; }
+    if(!window.MediaRecorder){ toast("This browser can't record video."); return; }
+    var mime=pickMime(); if(mime===""){ toast("No supported recording format."); return; }
+    ensureAC(); AC.resume&&AC.resume();
+    stop();
+    recDest=AC.createMediaStreamDestination();
+    var vstream=pcv.captureStream(30), mixed=new MediaStream();
+    vstream.getVideoTracks().forEach(function(t){ mixed.addTrack(t); });
+    recDest.stream.getAudioTracks().forEach(function(t){ mixed.addTrack(t); });
+    var rec, chunks=[];
+    try{ rec=new MediaRecorder(mixed,{mimeType:mime,videoBitsPerSecond:12000000}); }
+    catch(e){ toast("Recorder failed to start."); return; }
+    rec.ondataavailable=function(e){ if(e.data&&e.data.size) chunks.push(e.data); };
+    rec.onstop=function(){
+      var ext=mime.indexOf("mp4")>=0?"mp4":"webm";
+      var blob=new Blob(chunks,{type:mime.split(";")[0]});
+      var a=document.createElement("a"); a.href=URL.createObjectURL(blob);
+      a.download="ewi-pulse-"+Date.now()+"."+ext; document.body.appendChild(a); a.click(); a.remove();
+      stopVideos(); stopSource(); recDest=null;
+      $("exportBtn").disabled=false; $("exportBtn").textContent="Export MP4";
+      $("playBtn").disabled=false; drawFrame(0); updateTC(0);
+      toast("Exported "+ext.toUpperCase()+" — check your downloads.");
+    };
+    $("exportBtn").disabled=true; $("exportBtn").textContent="Recording…"; $("playBtn").disabled=true;
+    stopSource();
+    src=AC.createBufferSource(); src.buffer=audio.buffer; gain=AC.createGain();
+    src.connect(gain); gain.connect(AC.destination); gain.connect(recDest);
+    startVideos();
+    playStart=AC.currentTime; rec.start(100); src.start(0, settings.start);
+    (function stepE(){
+      var t=AC.currentTime-playStart;
+      drawFrame(Math.min(t, plan.length-0.001)); updateTC(t);
+      if(t>=plan.length){ try{src.stop();}catch(e){} if(rec.state!=="inactive") rec.stop(); return; }
+      requestAnimationFrame(stepE);
+    })();
+  }
+
+  /* ---------------------------------------------------------- readiness UI */
+  function updateReady(){
+    var ok=canSync();
+    $("syncBtn").disabled=!ok;
+    $("playBtn").disabled=!(ok && plan.shots.length);
+    $("exportBtn").disabled=!(ok && plan.shots.length);
+  }
+
+  /* ------------------------------------------------------------- wiring */
+  function bindDrop(){
+    var d=$("drop");
+    ["dragenter","dragover"].forEach(function(ev){ d.addEventListener(ev,function(e){ e.preventDefault(); d.classList.add("drag"); }); });
+    ["dragleave","drop"].forEach(function(ev){ d.addEventListener(ev,function(e){ e.preventDefault(); d.classList.remove("drag"); }); });
+    d.addEventListener("drop",function(e){ if(e.dataTransfer&&e.dataTransfer.files) addFiles(e.dataTransfer.files); });
+    d.addEventListener("click",function(){ $("filePhotos").click(); });
+    d.addEventListener("keydown",function(e){ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); $("filePhotos").click(); } });
+    // page-wide drop convenience
+    window.addEventListener("dragover",function(e){ e.preventDefault(); });
+    window.addEventListener("drop",function(e){ e.preventDefault(); if(e.target.closest&&e.target.closest("#drop")) return;
+      if(e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files.length) addFiles(e.dataTransfer.files); });
+  }
+  function bindSeg(id, key, cb){
+    var wrap=$(id);
+    wrap.addEventListener("click",function(e){ var b=e.target.closest("button"); if(!b) return;
+      Array.prototype.forEach.call(wrap.children,function(x){ x.classList.remove("on"); }); b.classList.add("on");
+      cb(b.getAttribute(key)); });
+  }
+
+  $("addPhotos").onclick=function(){ $("filePhotos").click(); };
+  $("addVideos").onclick=function(){ $("fileVideos").click(); };
+  $("addAudio").onclick =function(){ $("fileAudio").click(); };
+  $("filePhotos").onchange=function(e){ addFiles(e.target.files); e.target.value=""; };
+  $("fileVideos").onchange=function(e){ addFiles(e.target.files); e.target.value=""; };
+  $("fileAudio").onchange =function(e){ if(e.target.files[0]) loadAudioFile(e.target.files[0]); e.target.value=""; };
+
+  $("tabUpload").onclick=function(){ $("tabUpload").classList.add("on"); $("tabLink").classList.remove("on");
+    $("tabUpload").setAttribute("aria-selected","true"); $("tabLink").setAttribute("aria-selected","false");
+    $("paneUpload").style.display=""; $("paneLink").style.display="none"; };
+  $("tabLink").onclick=function(){ if($("tabLink").disabled) return; $("tabLink").classList.add("on"); $("tabUpload").classList.remove("on");
+    $("tabLink").setAttribute("aria-selected","true"); $("tabUpload").setAttribute("aria-selected","false");
+    $("paneUpload").style.display="none"; $("paneLink").style.display=""; };
+  $("fetchAudio").onclick=fetchAudioLink;
+  $("linkInput").addEventListener("keydown",function(e){ if(e.key==="Enter") fetchAudioLink(); });
+
+  $("lenRange").addEventListener("input",function(e){ settings.length=+e.target.value; $("lenVal").textContent=settings.length;
+    if(canSync()) planCuts(); drawStatic(); });
+  $("startRange").addEventListener("input",function(e){ settings.start=+e.target.value; $("startVal").textContent=fmt(settings.start);
+    if(canSync()) planCuts(); drawStatic(); });
+  bindSeg("aspectSeg","data-a",function(v){ setAspect(v); });
+  bindSeg("energySeg","data-e",function(v){ settings.energy=v; if(canSync()) planCuts(); drawStatic(); });
+
+  $("syncBtn").onclick=function(){ if(!canSync()){ toast("Add media and a song first."); return; }
+    planCuts(); updateReady(); drawFrame(0); updateTC(0); toast("Synced — "+plan.shots.length+" cuts on the beat."); };
+  $("playBtn").onclick=function(){ playing?stop():play(); };
+  $("exportBtn").onclick=exportClip;
+  $("resetBtn").onclick=function(){ if(!confirm("Clear all media and audio?")) return;
+    stop(); media.forEach(function(m){ if(m.type==="video"&&m.el.parentNode) m.el.parentNode.removeChild(m.el); });
+    media=[]; audio={buffer:null,name:"",analysis:null}; plan={shots:[],length:settings.length};
+    $("audioCard").classList.remove("show"); renderPool(); updateReady();
+    ["stBpm","stBeats","stDrops","stCuts","stUsed"].forEach(function(id){ $(id).textContent="—"; });
+    $("bpmTag").textContent="—"; drawStatic(); };
+
+  document.addEventListener("keydown",function(e){ if(e.code==="Space" && !/INPUT|TEXTAREA/.test(document.activeElement.tagName)){
+    e.preventDefault(); if(!$("playBtn").disabled){ playing?stop():play(); } } });
+
+  /* ----------------------------------------------------------------- init */
+  setAspect("9:16"); renderPool(); drawStatic(); bindDrop(); checkBackend();
+})();
+</script>
+</body>
+</html>
