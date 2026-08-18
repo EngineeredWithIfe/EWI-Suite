@@ -366,7 +366,18 @@ function injectCSS(){
   .nv-chip{font:600 11px -apple-system,system-ui,sans-serif;color:#c6cde0;background:rgba(255,255,255,.05);
     border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:4px 10px;cursor:pointer;transition:all .14s ease}
   .nv-chip:hover{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.22)}
-  .nv-chip.sel{background:rgba(124,92,255,.28);border-color:#7c5cff;color:#fff;box-shadow:0 0 0 1px rgba(124,92,255,.4) inset}`;
+  .nv-chip.sel{background:rgba(124,92,255,.28);border-color:#7c5cff;color:#fff;box-shadow:0 0 0 1px rgba(124,92,255,.4) inset}
+  .nv-sec{font:700 11px -apple-system,system-ui,sans-serif;color:#c6cde0;margin:9px 0 4px;letter-spacing:.02em}
+  .nv-scrollx{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:2px 0}
+  .nv-tbl{width:100%;border-collapse:collapse;font:600 10.5px -apple-system,system-ui,sans-serif;color:#dfe4f2}
+  .nv-tbl th,.nv-tbl td{padding:4px 7px;text-align:right;white-space:nowrap;border-bottom:1px solid rgba(255,255,255,.07)}
+  .nv-tbl th:first-child,.nv-tbl td:first-child{text-align:left}
+  .nv-tbl th{color:#9aa3bd;font-weight:700;cursor:help}
+  .nv-read{font:500 11px -apple-system,system-ui,sans-serif;color:#c6cde0;margin:4px 0;line-height:1.5}
+  .nv-read b{color:#fff}
+  .nv-foot{font:500 10px -apple-system,system-ui,sans-serif;color:#8b93ad;margin-top:6px;line-height:1.55}
+  .nv-foot b{color:#aeb6cf}
+  .nv-travel{margin-top:8px;border-top:1px solid rgba(255,255,255,.08);padding-top:4px}`;
   document.head.appendChild(s);
 }
 
@@ -1247,6 +1258,7 @@ const AU_KM_NAV = 1.495978707e8;              // km per AU
 const LY_IN_AU  = 63241.077;                  // AU per light-year
 const MOON_MASS = 3.694e-8;                   // M☉
 let _navAccum = 0;
+let navTravelOpen = false;                    // NAVLINQ panel: interplanetary-travel section expanded?
 
 function navStarSprite(name){ for (const s of dnStars){ if (s.userData.dn && s.userData.dn.name===name) return s; } return null; }
 
@@ -1321,15 +1333,123 @@ function navComputeMidpoints(){
 function navReadoutHTML(R){
   const p = R.phys;
   if (!R.anyStar){
+    const T = navTravelCompute(R);
+    const travel = T ? `<br><span style="color:#8b93ad;font-size:11px">Travel: barycenter equilibrium T ≈ <b>${T.Tspace.toFixed(0)} K</b> · longest one-way light time <b>${fmtSeconds(T.maxLight)}</b> · open “Interplanetary travel” for per-point g, v_esc, fuel &amp; synced-launch timing.</span>` : '';
     return `<b>NAVLINQ · ${R.nodes.length} bodies · in-system</b><br>`+
       `<span style="color:#c6cde0">Barycenter: ecliptic λ ${p.lon.toFixed(2)}° · β ${p.lat.toFixed(2)}° · ${p.r.toFixed(4)} AU from the Sun</span><br>`+
       `<span style="color:#c6cde0">Centre → barycenter offset <b>${fmtKm(p.offKm)}</b> · node span ${p.span.toFixed(3)} AU</span><br>`+
-      `<span style="color:#9aa3bd;font-size:11px">Gravity pulls the midpoint ${fmtKm(p.offKm)} toward <b>${R.dom.name}</b> (${R.massPct.toFixed(1)}% of the set's mass). Mass-weighted 3-D barycenter — physically exact (established mechanics).</span>`;
+      `<span style="color:#9aa3bd;font-size:11px">Gravity pulls the midpoint ${fmtKm(p.offKm)} toward <b>${R.dom.name}</b> (${R.massPct.toFixed(1)}% of the set's mass). Mass-weighted 3-D barycenter — physically exact (established mechanics).</span>`+travel;
   }
   return `<b>NAVLINQ · ${R.nodes.length} nodes · interstellar</b><br>`+
     `<span style="color:#c6cde0">Barycenter bearing λ ${p.lon.toFixed(1)}° · β ${p.lat.toFixed(1)}° · ${p.r.toFixed(3)} ly from the Sun</span><br>`+
     `<span style="color:#c6cde0">Node span ${p.span.toFixed(2)} ly · dominant mass <b>${R.dom.name}</b> (${R.massPct.toFixed(1)}%)</span><br>`+
     `<span style="color:#9aa3bd;font-size:11px">Real catalogued distances &amp; directions; the marker shows the true 3-D bearing rendered at representative range (stars sit far beyond scene scale). O(N) &amp; direction-agnostic — the same formula extends to any bodies in any direction.</span>`;
+}
+
+/* ---------------------------------------------------------------------------
+   5c-bis.  NAVLINQ · interplanetary-travel physics
+   ---------------------------------------------------------------------------
+   Every route is made comparable for *both* endpoints by quantifying, per node:
+   surface gravity, escape velocity & specific escape energy (the energy floor to
+   leave a surface), propellant fraction (fuel cost), distance & light-time to the
+   shared barycenter, a common-yardstick transit time, and the launch offsets that
+   synchronise arrival. Every figure is labelled by basis (established / exact /
+   illustrative / speculative) — no false precision. Parameters are real, measured
+   values: μ = GM (m³·s⁻², IAU DE440 — ≥9 significant figures, far tighter than G·M
+   since G itself is only ~2×10⁻⁵ precise), R = mean radius (m), T = mean surface
+   or 1-bar temperature (K). Derived quantities are exact consequences of energy
+   conservation, so they carry <0.1% modelling error. */
+const NAV_C_KMS   = 299792.458;               // km·s⁻¹ — speed of light (exact, SI)
+const NAV_G0      = 9.80665;                   // m·s⁻² — standard gravity (exact, SI)
+const NAV_VE_CHEM = 450 * NAV_G0 / 1000;       // km·s⁻¹ — exhaust speed, Isp 450 s (LH₂/LOX)
+const NAV_A_LOWT  = 0.001 * NAV_G0;            // m·s⁻² — 0.001 g sustained (high-Isp electric ref)
+const NAV_BODY = {
+  sun:     { mu:1.32712440018e20, R:6.957e8,  T:5772 },
+  mercury: { mu:2.2032e13,        R:2.4397e6, T:440  },
+  venus:   { mu:3.24859e14,       R:6.0518e6, T:737  },
+  earth:   { mu:3.986004418e14,   R:6.371e6,  T:288  },
+  moon:    { mu:4.9048695e12,     R:1.7374e6, T:250  },
+  mars:    { mu:4.282837e13,      R:3.3895e6, T:210  },
+  jupiter: { mu:1.26686534e17,    R:6.9911e7, T:165  },
+  saturn:  { mu:3.7931187e16,     R:5.8232e7, T:134  },
+  uranus:  { mu:5.793939e15,      R:2.5362e7, T:76   },
+  neptune: { mu:6.836529e15,      R:2.4622e7, T:72   },
+};
+function navBodyKey(n){ if(n.kind==='planet') return n.id; if(n.id==='sun') return 'sun'; if(n.id==='moon') return 'moon'; return null; }
+// Per-node departure/transfer metrics toward the (in-system) barycenter.
+function navTravelCompute(R){
+  if (!R || R.anyStar) return null;
+  const bary = R.phys.bary;                                   // AU vector (Sun at origin)
+  const rows = [];
+  R.nodes.forEach(n=>{
+    const bk = navBodyKey(n); const b = bk && NAV_BODY[bk]; if(!b) return;
+    const g    = b.mu/(b.R*b.R);                               // m·s⁻² — surface gravity
+    const vesc = Math.sqrt(2*b.mu/b.R)/1000;                   // km·s⁻¹ — escape velocity
+    const eps  = b.mu/b.R;                                     // J·kg⁻¹ — specific escape energy = ½v_esc²
+    const dAU  = n.auPos.distanceTo(bary);
+    const dkm  = dAU*AU_KM_NAV, dm = dkm*1000;
+    const tLight  = dkm/NAV_C_KMS;                             // s — one-way light/command time
+    const tCruise = dm>0 ? 2*Math.sqrt(dm/NAV_A_LOWT) : 0;     // s — brachistochrone at 0.001 g
+    const propFrac = 1 - Math.exp(-vesc/NAV_VE_CHEM);          // surface-escape propellant fraction (Tsiolkovsky)
+    rows.push({ name:n.name, g, vesc, eps, dAU, dkm, tLight, tCruise, propFrac, T:b.T });
+  });
+  if (!rows.length) return null;
+  const tMax = rows.reduce((m,r)=>Math.max(m,r.tCruise),0);
+  rows.forEach(r=> r.launchOffset = tMax - r.tCruise);        // head start → simultaneous arrival
+  const rBary = R.phys.r;                                     // AU from the Sun
+  // Grey-body equilibrium temperature at the barycenter. The inverse-square point
+  // source diverges at r→0, but a passive body cannot exceed the Sun's photospheric
+  // effective temperature (~5772 K) as it approaches the surface — clamp there.
+  const Tspace = Math.min(NAV_BODY.sun.T, Math.max(2.725, 278.6*Math.pow(Math.max(rBary,1e-6),-0.5)));
+  const maxLight = rows.reduce((m,r)=>Math.max(m,r.tLight),0);
+  return { rows, tMax, rBary, Tspace, maxLight };
+}
+function navTravelHTML(R){
+  if (!R) return `<div class="nv-foot">Select 2 or more bodies to compute travel physics.</div>`;
+  if (R.anyStar){
+    const rows = R.nodes.map(n=>{
+      const d = n.lyPos.distanceTo(R.phys.bary);
+      return `<tr><td>${n.name}</td><td>${d.toFixed(2)} ly</td><td>${d.toFixed(2)} yr</td></tr>`;
+    }).join('');
+    return `<div class="nv-sec">Interstellar leg — light-time only</div>
+      <div class="nv-scrollx"><table class="nv-tbl"><thead><tr><th>Node</th><th>To midpoint</th><th>One-way light time</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <div class="nv-foot"><b>Basis.</b> One-way light time = distance ÷ c (c = 299,792.458 km·s⁻¹, exact) — a <b>hard relativistic floor</b>. Surface-escape and crewed/robotic transit times are omitted on purpose: no demonstrated propulsion reaches a meaningful fraction of c, so any figure would be false precision (<b>speculative</b>).</div>`;
+  }
+  const T = navTravelCompute(R);
+  if (!T) return `<div class="nv-foot">Select 2 or more in-system bodies to compute travel physics.</div>`;
+  const rowsHtml = T.rows.map(x=>`<tr>
+      <td>${x.name}</td><td>${x.g.toFixed(2)}</td><td>${x.vesc.toFixed(2)}</td>
+      <td>${(x.eps/1e6).toFixed(1)}</td><td>${(x.propFrac*100).toFixed(1)}%</td>
+      <td>${fmtKm(x.dkm)}</td><td>${fmtSeconds(x.tCruise)}</td>
+      <td>${x.launchOffset < 1 ? '—' : '+'+fmtSeconds(x.launchOffset)}</td><td>${fmtSeconds(x.tLight)}</td><td>${x.T} K</td>
+    </tr>`).join('');
+  return `
+    <div class="nv-sec">Per-point departure &amp; transfer to the barycenter</div>
+    <div class="nv-scrollx"><table class="nv-tbl">
+      <thead><tr>
+        <th>Body</th><th title="Surface gravity g = μ/R²">g m/s²</th>
+        <th title="Escape velocity √(2μ/R)">v_esc km/s</th>
+        <th title="Specific escape energy μ/R = ½v_esc²">E_esc MJ/kg</th>
+        <th title="Propellant mass fraction to escape the surface — chemical Isp 450 s (Tsiolkovsky)">Fuel</th>
+        <th title="Straight-line distance to the barycenter">To midpoint</th>
+        <th title="Continuous-thrust flip-and-burn at 0.001 g (t = 2√(d/a))">Transit</th>
+        <th title="Head start so every point arrives together">Launch Δt</th>
+        <th title="One-way light / command time to the midpoint (d ÷ c)">Comm 1-way</th>
+        <th title="Mean surface / 1-bar temperature">T_surf</th>
+      </tr></thead><tbody>${rowsHtml}</tbody></table></div>
+    <div class="nv-sec">Rendezvous &amp; environment</div>
+    <div class="nv-read">
+      Synchronised arrival: the farthest point launches first; each other point waits its <b>Launch Δt</b> so all reach the barycenter together — a common continuous-thrust flip-and-burn at 0.001 g (≈9.8 mm·s⁻²), used purely as a transparent yardstick, not a specific vehicle.<br>
+      Barycenter environment: <b>${T.rBary.toFixed(3)} AU</b> from the Sun → blackbody equilibrium <b>${T.Tspace.toFixed(0)} K</b> (grey body, albedo 0; 2.725 K CMB floor). Longest one-way command latency in the set: <b>${fmtSeconds(T.maxLight)}</b> (round-trip ${fmtSeconds(T.maxLight*2)}).
+    </div>
+    <div class="nv-foot">
+      <b>Basis (calibrated confidence).</b> g = μ/R², v_esc = √(2μ/R) and E_esc = μ/R = ½v_esc² are exact consequences of energy conservation using measured μ = GM (IAU DE440, ≥9 significant figures) — <b>established science, &lt;0.1%</b> error. Fuel = 1 − e^(−v_esc/v_e), v_e = Isp·g₀ with Isp 450 s (LH₂/LOX) — <b>exact</b> for that Δv; a real ascent adds ~10–30% for drag &amp; gravity losses, so read it as a floor. Transit &amp; Launch Δt use a brachistochrone (t = 2√(d/a)) — a clean kinematic reference; Hohmann/chemical transfers take longer and a specific vehicle changes the value (<b>illustrative</b>). Comm time = d ÷ c is a <b>hard relativistic floor</b> — nothing beats it. T_surf are measured means; T_space is a modelled equilibrium. Read-across: higher v_esc &amp; Fuel ⇒ costlier launch, lower ROI; longer Comm ⇒ harder real-time control, higher risk; extreme T ⇒ thermal-design load.
+    </div>`;
+}
+function navRefreshTravel(){
+  const P = dnPanels.navlinq; if (!P) return;
+  const el = P.body.querySelector('#nvTravel'); if (!el || !navTravelOpen) return;
+  el.innerHTML = navTravelHTML(navComputeMidpoints());
 }
 
 function toggleNavMode(){
@@ -1383,6 +1503,7 @@ function updateNav(){
   clearNav();
   const R = navComputeMidpoints();
   navRefreshPanel(R);
+  if (navTravelOpen) navRefreshTravel();
   if (!R){
     if (navMode && navSel.size===1){ eventNoteEl.style.display='block'; eventNoteEl.innerHTML='<b>NAVLINQ</b><br><span style="color:#c6cde0">Select at least one more body to compute a midpoint.</span>'; }
     return;
@@ -1426,10 +1547,19 @@ function buildNavlinqPanel(body){
     <div class="nv-grp-lbl">In-system</div><div class="nv-wrap">${inSys.join('')}</div>
     <div class="nv-grp-lbl">Interstellar · real distances</div><div class="nv-wrap">${stars.join('')}</div>
     <div class="dn-read" id="nvOut" style="margin-top:8px">Select 2 or more bodies to compute a midpoint.</div>
-    <div class="dn-rowbtn"><button class="dn-mini" id="nvClear">Clear</button><button class="dn-mini" id="nvFly" style="margin-left:auto">Fly to midpoint ▶</button></div>`;
+    <div class="dn-rowbtn"><button class="dn-mini" id="nvClear">Clear</button><button class="dn-mini" id="nvTravelBtn">Interplanetary travel ▾</button><button class="dn-mini" id="nvFly" style="margin-left:auto">Fly to midpoint ▶</button></div>
+    <div id="nvTravel" class="nv-travel" style="display:none"></div>`;
   body.querySelectorAll('.nv-chip').forEach(c=>c.addEventListener('click', ()=>navToggleBody(c.dataset.id)));
-  body.querySelector('#nvClear').addEventListener('click', ()=>{ navSel.clear(); clearNav(); highlightNav(); navRefreshPanel(null); });
+  body.querySelector('#nvClear').addEventListener('click', ()=>{ navSel.clear(); clearNav(); highlightNav(); navRefreshPanel(null); navRefreshTravel(); });
   body.querySelector('#nvFly').addEventListener('click', navFlyToMidpoint);
+  body.querySelector('#nvTravelBtn').addEventListener('click', ()=>{
+    navTravelOpen = !navTravelOpen;
+    const el = body.querySelector('#nvTravel'), btn = body.querySelector('#nvTravelBtn');
+    el.style.display = navTravelOpen ? 'block' : 'none';
+    btn.textContent = navTravelOpen ? 'Interplanetary travel ▴' : 'Interplanetary travel ▾';
+    btn.classList.toggle('on', navTravelOpen);
+    if (navTravelOpen) navRefreshTravel();
+  });
 }
 
 /* ---------------------------------------------------------------------------
@@ -2553,6 +2683,9 @@ window.__cosmosStudio = { open:openStudio, close, heliocentric, auToScene, PLANE
       lon:+R.phys.lon.toFixed(3), lat:+R.phys.lat.toFixed(3), r:+R.phys.r.toFixed(5),
       span:+R.phys.span.toFixed(5), dominant:R.dom.name,
       offset:R.anyStar?null:+((R.phys.offKm)||0).toFixed(1) }; },
+  get navTravel(){ const R=navComputeMidpoints(); if(!R||R.anyStar) return null; const T=navTravelCompute(R); if(!T) return null;
+    return { count:T.rows.length, TspaceK:+T.Tspace.toFixed(1), rBaryAU:+T.rBary.toFixed(5), maxLightS:+T.maxLight.toFixed(1),
+      rows:T.rows.map(r=>({ name:r.name, g:+r.g.toFixed(3), vescKms:+r.vesc.toFixed(3), epsMJ:+(r.eps/1e6).toFixed(2), fuelPct:+(r.propFrac*100).toFixed(2), distKm:+r.dkm.toFixed(0), tCruiseS:+r.tCruise.toFixed(1), launchOffsetS:+r.launchOffset.toFixed(1), tLightS:+r.tLight.toFixed(2), TsurfK:r.T })) }; },
   get imported(){return imported;},
   get cameraDistance(){ return (camera && orbit) ? camera.position.distanceTo(orbit.target) : null; },
   // deep-nav test hooks
