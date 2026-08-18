@@ -280,6 +280,22 @@ function rgbHex(c){ return "#"+c.map(function(x){return ("0"+Math.round(x).toStr
 
 var scene=[], selId=null;
 var cam={az:0.7, el:0.55, dist:7.5, target:[0,0.6,0]};
+/* Smooth dolly: glide cam.dist toward a target in LOG-space with a frame-rate-
+   independent ease (1 - e^-dt/τ). Geometric (equal ratio per second), inertial,
+   never a hard step. Self-terminating rAF since the viewport renders on demand. */
+var zoomForge={target:7.5, active:false, last:0};
+function syncForgeZoom(){ zoomForge.target=cam.dist; zoomForge.active=false; zoomForge.last=0; }
+function tickForgeZoom(now){
+  if(!zoomForge.active) return;
+  if(!zoomForge.last) zoomForge.last=now;
+  var dt=Math.min(0.05,(now-zoomForge.last)/1000); zoomForge.last=now;
+  var cur=cam.dist, tgt=zoomForge.target;
+  var k=1-Math.exp(-dt/0.055);
+  var ns=Math.exp(Math.log(cur)+(Math.log(tgt)-Math.log(cur))*k);
+  if(Math.abs(Math.log(tgt/ns))<1e-4){ ns=tgt; zoomForge.active=false; zoomForge.last=0; }
+  cam.dist=ns; draw();
+  if(zoomForge.active) requestAnimationFrame(tickForgeZoom);
+}
 var light={az:45*Math.PI/180, el:55*Math.PI/180, str:1.0, amb:0.25};
 var shading="solid", ground=true, renderMode=false;
 
@@ -426,7 +442,7 @@ function deleteSel(){ if(selId==null) return; scene=scene.filter(function(o){ret
 function duplicateSel(){ var o=byId(selId); if(!o) return; var c=JSON.parse(JSON.stringify(o)); c.id=UID++; c.name=o.name+" copy"; c.pos=[o.pos[0]+0.6,o.pos[1],o.pos[2]+0.6]; scene.push(c); selId=c.id; renderOutliner(); syncProps(); draw(); }
 function frameAll(){ if(!scene.length) return; var all=[]; scene.forEach(function(o){ worldVerts(o).forEach(function(p){all.push(p);}); });
   var mn=[1e9,1e9,1e9],mx=[-1e9,-1e9,-1e9]; all.forEach(function(p){for(var k=0;k<3;k++){mn[k]=Math.min(mn[k],p[k]);mx[k]=Math.max(mx[k],p[k]);}});
-  cam.target=[(mn[0]+mx[0])/2,(mn[1]+mx[1])/2,(mn[2]+mx[2])/2]; var rad=len(sub(mx,mn))/2; cam.dist=Math.max(3,rad*2.4); draw(); }
+  cam.target=[(mn[0]+mx[0])/2,(mn[1]+mx[1])/2,(mn[2]+mx[2])/2]; var rad=len(sub(mx,mn))/2; cam.dist=Math.max(3,rad*2.4); syncForgeZoom(); draw(); }
 
 /* ---------- UI: primitives ---------- */
 var PRIMS=[
@@ -496,7 +512,7 @@ bindLight("light-el",function(v){light.el=v*Math.PI/180;},"l-el",function(v){ret
 bindLight("light-str",function(v){light.str=v/100;},"l-str",function(v){return (v/100).toFixed(1);});
 bindLight("light-amb",function(v){light.amb=v/100;},"l-amb",function(v){return (v/100).toFixed(2);});
 document.getElementById("btn-frame").addEventListener("click",frameAll);
-document.getElementById("btn-reset-cam").addEventListener("click",function(){ cam={az:0.7,el:0.55,dist:7.5,target:[0,0.6,0]}; draw(); });
+document.getElementById("btn-reset-cam").addEventListener("click",function(){ cam={az:0.7,el:0.55,dist:7.5,target:[0,0.6,0]}; syncForgeZoom(); draw(); });
 document.getElementById("btn-ground").addEventListener("click",function(){ ground=!ground; this.textContent="Ground: "+(ground?"on":"off"); draw(); });
 document.getElementById("btn-clear").addEventListener("click",function(){ scene=[]; selId=null; renderOutliner(); syncProps(); draw(); });
 
@@ -515,7 +531,16 @@ cv.addEventListener("pointermove",function(e){ if(!drag) return; var dx=e.client
   else { cam.az-=dx*0.01; cam.el=Math.max(-1.5,Math.min(1.5,cam.el+dy*0.01)); }
   drag.x=e.clientX; drag.y=e.clientY; draw(); });
 cv.addEventListener("pointerup",function(e){ if(drag && !drag.moved){ var id=pick(drag.px,drag.py); selId=id; renderOutliner(); syncProps(); draw(); } drag=null; });
-cv.addEventListener("wheel",function(e){ e.preventDefault(); cam.dist=Math.max(1.5,Math.min(40,cam.dist*(1+Math.sign(e.deltaY)*0.1))); draw(); },{passive:false});
+cv.addEventListener("wheel",function(e){ e.preventDefault();
+  var dy=e.deltaY;
+  if(e.deltaMode===1){ dy*=16; } else if(e.deltaMode===2){ var r=cv.getBoundingClientRect(); dy*=(r.height||800); }
+  dy=Math.max(-220,Math.min(220,dy));
+  var perPx=e.ctrlKey?0.026:0.0122;                 // pinch gets a firmer response
+  var factor=Math.exp(dy*perPx);                    // dy>0 (scroll down) => zoom out
+  var base=zoomForge.active?zoomForge.target:cam.dist;
+  zoomForge.target=Math.max(1.5,Math.min(40,base*factor));
+  if(!zoomForge.active){ zoomForge.active=true; zoomForge.last=0; requestAnimationFrame(tickForgeZoom); }
+},{passive:false});
 
 /* ---------- keyboard ---------- */
 document.addEventListener("keydown",function(e){ if(/INPUT|TEXTAREA|SELECT/.test((e.target.tagName||""))) return;

@@ -796,8 +796,33 @@
   // ---------- Preview loop ----------
   let needsDraw = true;
   function invalidate() { needsDraw = true; }
+  // Smooth, cursor-anchored zoom: glide a tile's media scale toward a target in
+  // LOG-space (geometric, perceptually uniform) with a frame-rate-independent
+  // ease, re-pinning the world point under the pointer every frame.
+  const gridZoom = { i: -1, target: 1, px: 0, py: 0, active: false, last: 0 };
+  function tickGridZoom(now) {
+    if (!gridZoom.active) return;
+    const i = gridZoom.i, tile = state.tiles[i];
+    if (!tile || !tile.media) { gridZoom.active = false; return; }
+    if (!gridZoom.last) gridZoom.last = now;
+    const dt = Math.min(0.05, (now - gridZoom.last) / 1000); gridZoom.last = now;
+    const g = computeGeometry(canvas.width, canvas.height)[i]; if (!g) { gridZoom.active = false; return; }
+    const box = geomBox(g);
+    const cur = tile.t.scale, tgt = gridZoom.target;
+    const k = 1 - Math.exp(-dt / 0.055);
+    let ns = Math.exp(Math.log(cur) + (Math.log(tgt) - Math.log(cur)) * k);
+    if (Math.abs(Math.log(tgt / ns)) < 1e-4) { ns = tgt; gridZoom.active = false; gridZoom.last = 0; }
+    const fr = ns / cur;
+    const ox = tile.t.tx * box.w, oy = tile.t.ty * box.h;
+    const nx = (gridZoom.px - box.cx) * (1 - fr) + fr * ox;
+    const ny = (gridZoom.py - box.cy) * (1 - fr) + fr * oy;
+    tile.t.scale = ns; tile.t.tx = nx / box.w; tile.t.ty = ny / box.h;
+    syncCellCtl();
+    invalidate();
+  }
   function hasVideo() { return state.tiles.some(t => t.media && t.media.type === "video"); }
-  function tick() {
+  function tick(now) {
+    tickGridZoom(now || performance.now());
     // videos always need continuous redraw; otherwise redraw on demand
     if (needsDraw || hasVideo()) { renderFrame(ctx, canvas.width, canvas.height); needsDraw = false; }
     requestAnimationFrame(tick);
@@ -899,15 +924,13 @@
     const g = computeGeometry(canvas.width, canvas.height)[i];
     const box = geomBox(g);
     if (e.ctrlKey || e.metaKey) {
-      const f = Math.exp(-e.deltaY * 0.0016);
-      const ns = clamp(tile.t.scale * f, 0.2, 8);
-      const fr = ns / tile.t.scale;
-      // anchor zoom at cursor
-      const ox = tile.t.tx * box.w, oy = tile.t.ty * box.h;
-      const nx = (p.x - box.cx) * (1 - fr) + fr * ox;
-      const ny = (p.y - box.cy) * (1 - fr) + fr * oy;
-      tile.t.scale = ns; tile.t.tx = nx / box.w; tile.t.ty = ny / box.h;
-      syncCellCtl();
+      let dy = e.deltaY;
+      if (e.deltaMode === 1) { dy *= 16; } else if (e.deltaMode === 2) { dy *= (box.h || 600); }
+      dy = Math.max(-220, Math.min(220, dy));
+      const factor = Math.exp(-dy * 0.0122);          // scroll up => zoom in
+      const base = (gridZoom.active && gridZoom.i === i) ? gridZoom.target : tile.t.scale;
+      gridZoom.i = i; gridZoom.target = clamp(base * factor, 0.2, 8);
+      gridZoom.px = p.x; gridZoom.py = p.y; gridZoom.active = true; gridZoom.last = 0;
     } else {
       tile.t.tx -= e.deltaX / box.w;
       tile.t.ty -= e.deltaY / box.h;

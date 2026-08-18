@@ -818,6 +818,7 @@
     if(S.follow && S.selected!=null){
       const b=byId(S.selected); if(b){ S.cam.x=b.x; S.cam.y=b.y; }
     }
+    tickZoom(dtReal);
     draw();
     refreshHud();
     if(S.navMode) updateNavReadout();
@@ -994,7 +995,7 @@
     for(const b of B){ b.T = b.T!=null && !isStar(b) ? b.T : (isStar(b)?starSurfaceT(b):b.T); }
     // set climate temps
     for(const b of B) if(!isStar(b)) b.T=equilibriumT(b);
-    if(view){ S.cam.scale=view.scale; S.cam.x=view.x; S.cam.y=view.y; }
+    if(view){ S.cam.scale=view.scale; S.cam.x=view.x; S.cam.y=view.y; syncZoom(); }
     else fitView();
     updateInspector(); updateFollowBtn();
   }
@@ -1015,6 +1016,10 @@
   // =========================================================================
   //  CAMERA
   // =========================================================================
+  const SCALE_MIN=1e-3, SCALE_MAX=5e6, ZOOM_TAU=0.055;   // τ in seconds — smaller = snappier
+  const zoomCtl={ target:S.cam.scale, ax:0, ay:0, sx:0, sy:0, active:false };
+  function syncZoom(){ zoomCtl.target=S.cam.scale; zoomCtl.active=false; }
+
   function fitView(){
     const B=S.bodies.filter(b=>b.m>0);
     const use = B.length?B:S.bodies;
@@ -1023,13 +1028,38 @@
     for(const b of use){ minx=Math.min(minx,b.x);miny=Math.min(miny,b.y);maxx=Math.max(maxx,b.x);maxy=Math.max(maxy,b.y); }
     const spanx=Math.max(1e-4,maxx-minx), spany=Math.max(1e-4,maxy-miny);
     S.cam.x=(minx+maxx)/2; S.cam.y=(miny+maxy)/2;
-    S.cam.scale=clamp(0.82*Math.min(W/spanx,H/spany), 1e-3, 5e5);
+    S.cam.scale=clamp(0.82*Math.min(W/spanx,H/spany), SCALE_MIN, 5e5);
+    syncZoom();
   }
+  // Instantaneous zoom about a screen point (kept as a fallback / direct set).
   function zoomAt(px,py,factor){
     const [wx,wy]=s2w(px,py);
-    S.cam.scale=clamp(S.cam.scale*factor,1e-3,5e6);
+    S.cam.scale=clamp(S.cam.scale*factor,SCALE_MIN,SCALE_MAX);
     const [nx,ny]=s2w(px,py);
     S.cam.x+=wx-nx; S.cam.y+=wy-ny;
+    syncZoom();
+  }
+  // Smooth, cursor-anchored zoom — the single path every gesture flows through.
+  function zoomBy(px,py,factor){
+    zoomCtl.target=clamp(zoomCtl.target*factor,SCALE_MIN,SCALE_MAX);
+    const w=s2w(px,py);                       // world point visually under the cursor NOW
+    zoomCtl.ax=w[0]; zoomCtl.ay=w[1];
+    zoomCtl.sx=px;   zoomCtl.sy=py;           // hold it under this screen point
+    zoomCtl.active=true;
+  }
+  // Advance the zoom glide one frame (called from the main loop with real dt).
+  function tickZoom(dt){
+    if(!zoomCtl.active) return;
+    const cur=S.cam.scale, tgt=zoomCtl.target;
+    const k=1-Math.exp(-dt/ZOOM_TAU);         // frame-rate-independent smoothing factor
+    let ns=Math.exp(Math.log(cur)+(Math.log(tgt)-Math.log(cur))*k);
+    if(Math.abs(Math.log(tgt/ns))<1e-4){ ns=tgt; zoomCtl.active=false; }
+    S.cam.scale=ns;
+    if(!(S.follow && S.selected!=null)){
+      // Re-pin: keep the stored world point under the stored screen point.
+      S.cam.x=zoomCtl.ax-(zoomCtl.sx-W/2)/ns;
+      S.cam.y=zoomCtl.ay-(zoomCtl.sy-H/2)/ns;
+    }
   }
 
   // =========================================================================
@@ -1106,7 +1136,15 @@
 
   view.addEventListener("wheel",e=>{
     e.preventDefault();
-    zoomAt(e.offsetX,e.offsetY, e.deltaY<0?1.12:1/1.12);
+    // Normalize the wheel delta across devices/OS scroll modes so a trackpad,
+    // Magic Mouse, and notched wheel feel identical; trackpad pinch (ctrlKey)
+    // gets a firmer response. Then map to a geometric factor via exp().
+    let dy=e.deltaY;
+    if(e.deltaMode===1) dy*=16;              // lines → ~px
+    else if(e.deltaMode===2) dy*=(H||800);   // pages → px
+    dy=clamp(dy,-220,220);
+    const perPx=e.ctrlKey?0.026:0.0122;      // sensitivity (λ): factor = e^(-dy·λ)
+    zoomBy(e.offsetX,e.offsetY, Math.exp(-dy*perPx));
   },{passive:false});
 
   // =========================================================================
@@ -1230,8 +1268,8 @@
   });
 
   // zoom buttons
-  document.getElementById("zoomIn").onclick=()=>zoomAt(W/2,H/2,1.2);
-  document.getElementById("zoomOut").onclick=()=>zoomAt(W/2,H/2,1/1.2);
+  document.getElementById("zoomIn").onclick=()=>zoomBy(W/2,H/2,1.35);
+  document.getElementById("zoomOut").onclick=()=>zoomBy(W/2,H/2,1/1.35);
   document.getElementById("fitBtn").onclick=()=>{ S.follow=false; updateFollowBtn(); fitView(); };
 
   // reset / help
@@ -1251,8 +1289,8 @@
       case "e": case "E": setTool("erase"); break;
       case "f": case "F": S.follow=false; updateFollowBtn(); fitView(); break;
       case "c": case "C": if(S.selected!=null){ S.follow=!S.follow; updateFollowBtn(); } break;
-      case "+": case "=": zoomAt(W/2,H/2,1.2); break;
-      case "-": case "_": zoomAt(W/2,H/2,1/1.2); break;
+      case "+": case "=": zoomBy(W/2,H/2,1.35); break;
+      case "-": case "_": zoomBy(W/2,H/2,1/1.35); break;
       case "Delete": case "Backspace": if(S.selected!=null){ const b=byId(S.selected); removeBody(S.selected); if(b) toast("Removed "+b.name);} break;
       case "Escape": gback.classList.remove("on"); break;
     }

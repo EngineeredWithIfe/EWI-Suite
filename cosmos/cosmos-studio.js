@@ -436,6 +436,11 @@ function buildScene(){
   orbit = new OrbitControls(camera, renderer.domElement);
   orbit.enableDamping = true; orbit.dampingFactor = 0.08;
   orbit.maxDistance = 900; orbit.minDistance = 0.5;
+  // Native wheel dolly is a hard per-event step (no inertia) which reads as
+  // stiff/gimmicky. We replace it with a smooth, cursor-anchored, log-space
+  // glide (onWheelDolly / tickDolly3D). Damping stays on for orbit + pan feel.
+  orbit.enableZoom = false;
+  orbit.zoomToCursor = true;   // (used only if native zoom is ever re-enabled)
 
   transform = new TransformControls(camera, renderer.domElement);
   transform.addEventListener('dragging-changed', e=>{ orbit.enabled = !e.value; });
@@ -475,6 +480,7 @@ function buildScene(){
   const markInput = ()=>{ cineLastInput = performance.now(); };
   renderer.domElement.addEventListener('pointerdown', markInput);
   renderer.domElement.addEventListener('wheel', markInput, { passive:true });
+  renderer.domElement.addEventListener('wheel', onWheelDolly, { passive:false });
   // Resilience: recover gracefully from a lost/restored WebGL context.
   renderer.domElement.addEventListener('webglcontextlost', e=>{ e.preventDefault(); playing=false; cancelAnimationFrame(raf); raf=0; toast('Graphics context lost — recovering…'); });
   renderer.domElement.addEventListener('webglcontextrestored', ()=>{ if (open && !raf){ try{ clock.start(); }catch(err){} animate(); } });
@@ -625,6 +631,71 @@ function tickCinematic(dt){
 }
 
 let raf = 0, lastClockSec = 0;
+
+/* ---------------------------------------------------------------------------
+   Apple-grade dolly (3D). Zoom is geometric, so we glide the camera's radius
+   (its distance to the orbit target) toward a target radius in LOG-space with
+   a frame-rate-independent exponential approach (1 - e^-dt/τ) — constant
+   perceptual rate, inertial ease-out, never a hard jump. The world point under
+   the pointer is held fixed each frame using target' = target + (1-s)(anchor -
+   target), the exact focal-plane relation for a radius scale s = r_new/r_old.
+   Wheel deltas are normalized across pixel/line/page modes and trackpad pinch
+   (ctrlKey) so every input device feels identical.
+--------------------------------------------------------------------------- */
+const ZOOM3D_TAU = 0.055;                          // seconds — smaller = snappier
+const zoom3D = { targetR: 0, anchor: new THREE.Vector3(), hasAnchor: false, active: false };
+const _dollyFwd = new THREE.Vector3();
+const _dollyOff = new THREE.Vector3();
+const _dollyHit = new THREE.Vector3();
+const _dollyPlane = new THREE.Plane();
+const _dollyNDC = new THREE.Vector2();
+
+function onWheelDolly(e){
+  e.preventDefault();
+  cineLastInput = performance.now();               // manual steering yields cinematic
+  const el = renderer.domElement, rect = el.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+  // World point visually under the cursor, on the focal plane through target.
+  _dollyNDC.set(((e.clientX-rect.left)/rect.width)*2-1, -(((e.clientY-rect.top)/rect.height)*2-1));
+  raycaster.setFromCamera(_dollyNDC, camera);
+  camera.getWorldDirection(_dollyFwd);
+  _dollyPlane.setFromNormalAndCoplanarPoint(_dollyFwd, orbit.target);
+  if (raycaster.ray.intersectPlane(_dollyPlane, _dollyHit)){ zoom3D.anchor.copy(_dollyHit); zoom3D.hasAnchor = true; }
+  else zoom3D.hasAnchor = false;
+  // Normalize the delta, then map to a geometric factor on the radius.
+  let dy = e.deltaY;
+  if (e.deltaMode===1) dy *= 16; else if (e.deltaMode===2) dy *= (rect.height||800);
+  dy = Math.max(-220, Math.min(220, dy));
+  const perPx = e.ctrlKey ? 0.026 : 0.0122;        // pinch gets a firmer response
+  const factor = Math.exp(dy*perPx);               // dy>0 (scroll down) → zoom OUT
+  const curR = camera.position.distanceTo(orbit.target);
+  const base = zoom3D.active ? zoom3D.targetR : curR;
+  zoom3D.targetR = Math.max(orbit.minDistance, Math.min(orbit.maxDistance, base*factor));
+  zoom3D.active = true;
+}
+
+function tickDolly3D(dt){
+  if (!zoom3D.active) return;
+  _dollyOff.copy(camera.position).sub(orbit.target);
+  const cur = _dollyOff.length();
+  if (cur < 1e-9){ zoom3D.active = false; return; }
+  const tgt = zoom3D.targetR;
+  const k = 1 - Math.exp(-dt/ZOOM3D_TAU);          // frame-rate-independent glide
+  let nr = Math.exp(Math.log(cur) + (Math.log(tgt)-Math.log(cur))*k);
+  nr = Math.max(orbit.minDistance, Math.min(orbit.maxDistance, nr));
+  if (Math.abs(Math.log(tgt/nr)) < 1e-4){ nr = tgt; zoom3D.active = false; }
+  const s = nr/cur;
+  if (zoom3D.hasAnchor){
+    // Pin the cursor's world point: target' = target + (1-s)(anchor - target).
+    const sx=(zoom3D.anchor.x-orbit.target.x)*(1-s),
+          sy=(zoom3D.anchor.y-orbit.target.y)*(1-s),
+          sz=(zoom3D.anchor.z-orbit.target.z)*(1-s);
+    if (isFinite(sx)&&isFinite(sy)&&isFinite(sz)) orbit.target.set(orbit.target.x+sx, orbit.target.y+sy, orbit.target.z+sz);
+  }
+  _dollyOff.setLength(nr);
+  camera.position.copy(orbit.target).add(_dollyOff);
+}
+
 function animate(){
   raf = requestAnimationFrame(animate);
   try {
@@ -646,6 +717,7 @@ function animate(){
 
     pollGamepad(dt);
     if (camMode==='cinematic') tickCinematic(dt);
+    tickDolly3D(dt);
     orbit.update();
     renderer.render(scene, camera);
 
@@ -1394,4 +1466,5 @@ else wireOpener();
 window.__cosmosStudio = { open:openStudio, close, heliocentric, auToScene, PLANETS, EVENTS,
   jumpToEvent, toggleNavMode, navBarycenterAU, setRealtime, dropMyLocation,
   get navSelection(){ return [...navSel]; }, get realtime(){ return realtime; },
-  get imported(){return imported;} };
+  get imported(){return imported;},
+  get cameraDistance(){ return (camera && orbit) ? camera.position.distanceTo(orbit.target) : null; } };
