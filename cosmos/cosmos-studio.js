@@ -211,6 +211,9 @@ let timeScale = 5;                           // sim days per real second
 let playing = true;
 let camMode = 'explore';                     // 'explore' | 'cinematic'
 let cineT = 0, cineFocusKey = 'earth', cineNextCut = 6;
+let cineFocusOn = false;                      // cinematic sub-mode: true = locked on one body
+let cineFocusId = null;                        // id of the focused body of mass
+const cineHist = [];                           // focus history for the ← (back) neighbour step
 let gamepadIndex = null;
 let idSeq = 1;
 
@@ -286,6 +289,20 @@ function injectCSS(){
   .st-toast.show{opacity:1}
   .st-badge{position:absolute;left:50%;transform:translateX(-50%);bottom:64px;z-index:6;background:rgba(124,92,255,.16);border:1px solid rgba(124,92,255,.5);
     border-radius:12px;padding:9px 14px;font-size:12px;max-width:min(440px,86vw);text-align:center;display:none}
+  .st-home{display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 12px 0 8px;border-radius:9px;
+    border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.04);color:#e8ecf6;font-weight:700;
+    font-size:12.5px;text-decoration:none;white-space:nowrap;transition:background .15s,border-color .15s}
+  .st-home:hover{background:rgba(124,92,255,.16);border-color:rgba(124,92,255,.5)}
+  .st-home .g{width:24px;height:24px;border-radius:7px;display:flex;align-items:center;justify-content:center;
+    background:linear-gradient(180deg,#7c5cff,#5a3fd6);color:#fff;font-size:13px}
+  .st-cine{position:absolute;left:50%;top:60px;transform:translateX(-50%);z-index:6;display:none;align-items:center;gap:6px;
+    background:rgba(12,14,24,.86);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:6px 8px}
+  .st-cine button{appearance:none;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.05);color:#e8ecf6;
+    height:30px;min-width:32px;padding:0 10px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;
+    display:inline-flex;align-items:center;justify-content:center;gap:5px;transition:background .15s,border-color .15s}
+  .st-cine button:hover{background:rgba(124,92,255,.18);border-color:rgba(124,92,255,.5)}
+  .st-cine button.on{background:linear-gradient(180deg,#7c5cff,#5a3fd6);border-color:transparent;color:#fff}
+  .st-cine .nm{font-size:12px;color:#c6cde0;min-width:98px;text-align:center;font-weight:600}
   @media (max-width:820px){
     .st-panel{width:44vw;max-width:250px;top:60px;bottom:120px}
     .st-hint{display:none}
@@ -358,6 +375,7 @@ function buildDOM(){
   root = document.createElement('div'); root.id = 'studioRoot';
   root.innerHTML = `
     <div class="st-bar">
+      <a class="st-home" id="stHome" href="https://engineeredwithife.github.io/EWI-Suite/" title="Back to EWI Home" aria-label="EWI Home"><span class="g">⌂</span> EWI&nbsp;Home</a>
       <div class="brand"><span class="m">◈</span> EWI&nbsp;Cosmos <span style="opacity:.6;font-weight:600">· 3D Studio</span></div>
       <div class="st-seg" role="group" aria-label="Camera">
         <button class="st-btn on" id="stExplore" title="Orbit / pan / zoom">🖱 <span class="lbl">Explore</span></button>
@@ -394,6 +412,14 @@ function buildDOM(){
     <div class="st-badge" id="stBadge"></div>
     <div class="dn-hud" id="dnHud"></div>
     <div class="dn-tip" id="dnTip"></div>
+
+    <div class="st-cine" id="stCineDock">
+      <button id="stCineAuto" class="on" title="Auto-directed cinematic camera">🎬 Auto</button>
+      <button id="stCinePrev" title="Nearest neighbouring body — back">←</button>
+      <span class="nm" id="stCineName">Auto-directed</span>
+      <button id="stCineNext" title="Nearest neighbouring body — next">→</button>
+      <button id="stCineFocus" title="Focus the selected body (or nearest body)">◎ Focus</button>
+    </div>
 
     <div class="st-time">
       <input type="date" id="stDate" value="2026-08-17" aria-label="Simulation date" />
@@ -446,6 +472,10 @@ function buildDOM(){
   root.querySelector('#stView2d').addEventListener('click', close);
   camBtnExp.addEventListener('click', ()=>setCamMode('explore'));
   camBtnCine.addEventListener('click', ()=>setCamMode('cinematic'));
+  root.querySelector('#stCineAuto').addEventListener('click', cineAuto);
+  root.querySelector('#stCinePrev').addEventListener('click', ()=>cineStep(-1));
+  root.querySelector('#stCineNext').addEventListener('click', ()=>cineStep(1));
+  root.querySelector('#stCineFocus').addEventListener('click', cineFocusSelected);
   root.querySelector('#stAdd').addEventListener('click', addPrimitiveMenu);
   root.querySelector('#stImport').addEventListener('click', ()=>root.querySelector('#stFile').click());
   root.querySelector('#stFile').addEventListener('change', e=>{ handleFiles(e.target.files); e.target.value=''; });
@@ -778,6 +808,9 @@ function tickCinematic(dt){
   // drag or wheel), yield full control and don't auto-cut. Auto-direction
   // resumes a few seconds after the user lets go.
   if (performance.now() - cineLastInput < 4000) return;
+  // Focus sub-mode: lock onto one chosen body of mass and glide around it,
+  // instead of the auto-director cutting between bodies.
+  if (cineFocusOn && cineFocusId){ cineTickFocus(dt); return; }
   cineT += dt; cineNextCut -= dt;
   if (cineNextCut <= 0){
     const keys = ['earth','earth','mars','jupiter','saturn','venus'];
@@ -795,6 +828,118 @@ function tickCinematic(dt){
   );
   camera.position.lerp(desired, 1 - Math.pow(0.001, dt));
   orbit.target.lerp(tgt, 1 - Math.pow(0.004, dt));
+}
+
+/* ---- Cinematic focus: lock onto one body of mass, hop to nearest neighbours ----
+   The ←/→ controls jump to the closest neighbouring body of mass by true 3D
+   world-space distance (omnidirectional): → walks a nearest-neighbour chain
+   outward while ← retraces it via a small history stack. "Auto" hands control
+   back to the auto-directed cinematic camera. */
+const _cineA = new THREE.Vector3();
+const _cineB = new THREE.Vector3();
+const _cineSize = new THREE.Vector3();
+
+function cineFocusList(){
+  const ids = [];
+  if (sun) ids.push('sun');
+  for (const p of PLANETS) if (planetMeshes[p.key]) ids.push(p.key);
+  if (moon) ids.push('moon');
+  for (const im of imported) ids.push(im.id);
+  return ids;
+}
+function cineCenterOf(id, out){
+  if (id==='sun' && sun){ sun.getWorldPosition(out); return 3; }
+  if (id==='moon' && moon){ moon.mesh.getWorldPosition(out); return 0.6; }
+  if (planetMeshes[id]){ planetMeshes[id].group.getWorldPosition(out); return (PLANETS.find(p=>p.key===id)?.size||1); }
+  const im = imported.find(x=>x.id===id);
+  if (im){ const b = new THREE.Box3().setFromObject(im.object3d); b.getCenter(out); return (b.getSize(_cineSize).length()*0.5)||1; }
+  return -1;
+}
+function cineName(id){
+  if (id==='sun') return 'Sun';
+  if (id==='moon') return 'Moon';
+  const p = PLANETS.find(x=>x.key===id); if (p) return p.name;
+  const im = imported.find(x=>x.id===id); if (im) return im.name;
+  return '—';
+}
+function cineNearestOther(id, exclude){
+  if (cineCenterOf(id, _cineA) < 0) return null;
+  let best = null, bestD = Infinity;
+  for (const cand of cineFocusList()){
+    if (cand===id || cand===exclude) continue;
+    if (cineCenterOf(cand, _cineB) < 0) continue;
+    const d = _cineA.distanceTo(_cineB);
+    if (d < bestD){ bestD = d; best = cand; }
+  }
+  return best;
+}
+function cineNearestToCamera(){
+  let best = null, bestD = Infinity;
+  for (const cand of cineFocusList()){
+    if (cineCenterOf(cand, _cineB) < 0) continue;
+    const d = camera.position.distanceTo(_cineB);
+    if (d < bestD){ bestD = d; best = cand; }
+  }
+  return best;
+}
+function cineEnterFocus(id){
+  if (!id) return;
+  if (camMode!=='cinematic') setCamMode('cinematic');
+  cineFocusOn = true; cineFocusId = id; cineLastInput = 0;
+  cineUpdateDock();
+}
+function cineFocusSelected(){
+  let id = null;
+  if (selected){
+    if (selected.type==='planet') id = (String(selected.key).toLowerCase()==='sun') ? 'sun' : selected.key;
+    else if (selected.type==='imported') id = selected.im.id;
+  }
+  if (!id || cineCenterOf(id, _cineB) < 0) id = cineNearestToCamera();
+  cineEnterFocus(id);
+}
+function cineAuto(){
+  cineFocusOn = false; cineFocusId = null; cineHist.length = 0;
+  cineNextCut = 0; cineLastInput = 0;
+  if (camMode!=='cinematic') setCamMode('cinematic'); else cineUpdateDock();
+}
+function cineStep(dir){
+  if (camMode!=='cinematic') setCamMode('cinematic');
+  if (!cineFocusOn || !cineFocusId){ cineFocusSelected(); return; }
+  if (dir < 0){
+    const prev = cineHist.pop();
+    if (prev != null){ cineFocusId = prev; cineLastInput = 0; cineUpdateDock(); return; }
+  }
+  const cameFrom = cineHist.length ? cineHist[cineHist.length-1] : null;
+  const next = cineNearestOther(cineFocusId, dir>0 ? cameFrom : null);
+  if (next){
+    if (dir>0) cineHist.push(cineFocusId);
+    cineFocusId = next; cineLastInput = 0; cineUpdateDock();
+  }
+}
+function cineUpdateDock(){
+  if (!root) return;
+  const dock = root.querySelector('#stCineDock'); if (!dock) return;
+  dock.style.display = (camMode==='cinematic') ? 'flex' : 'none';
+  const nm = dock.querySelector('#stCineName');
+  if (nm) nm.textContent = cineFocusOn ? cineName(cineFocusId) : 'Auto-directed';
+  const auto = dock.querySelector('#stCineAuto');
+  if (auto) auto.classList.toggle('on', !cineFocusOn);
+  const focus = dock.querySelector('#stCineFocus');
+  if (focus) focus.classList.toggle('on', cineFocusOn);
+}
+function cineTickFocus(dt){
+  const rad = cineCenterOf(cineFocusId, _cineA);
+  if (rad < 0){ cineFocusOn = false; cineUpdateDock(); return; }
+  cineT += dt;
+  const radius = 5 + rad*4;
+  const ang = cineT*0.14;
+  const desired = new THREE.Vector3(
+    _cineA.x + Math.cos(ang)*radius,
+    _cineA.y + radius*0.34 + Math.sin(cineT*0.4)*radius*0.12,
+    _cineA.z + Math.sin(ang)*radius
+  );
+  camera.position.lerp(desired, 1 - Math.pow(0.0016, dt));
+  orbit.target.lerp(_cineA, 1 - Math.pow(0.004, dt));
 }
 
 let raf = 0, lastClockSec = 0;
@@ -1320,6 +1465,8 @@ function setCamMode(m){
   // auto-directed only while the user isn't actively steering.
   orbit.enabled = true;
   if (m==='cinematic'){ transform.detach(); cineNextCut = 0; cineLastInput = 0; }
+  else { cineFocusOn = false; }
+  cineUpdateDock();
 }
 
 function focusKey(key){
@@ -1721,6 +1868,11 @@ function openStudio(){
   open = true;
   root.classList.add('on');
   toggleSuiteChrome(true);
+  // Studio-owned EWI Home button (top-left): mirror the suite's home target so
+  // it stays correct in both the standalone app and the suite shell.
+  const homeSrc = document.getElementById('ewi-home');
+  const stHome = root.querySelector('#stHome');
+  if (stHome && homeSrc){ const h = homeSrc.getAttribute('href') || homeSrc.href; if (h) stHome.href = h; }
   syncViewSwitch(true);
   onResize();
   clock.start();
