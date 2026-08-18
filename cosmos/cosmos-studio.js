@@ -1855,7 +1855,7 @@ const AIRPORTS = {
   PER:['Perth',-31.9403,115.9669], AKL:['Auckland',-37.0082,174.7850], NAN:['Nadi',-17.7554,177.4434] };
 
 let dnInited=false, dnPins=[], dnStars=[], dnPinsVisible=true, dnFlight=null, dnPlane=null, dnFlightArc=null;
-let dnHudEl=null, dnTipEl=null, dnTempoEl=null, dnTempoFrac=0.45, dnWorldSlow=1;
+let dnHudEl=null, dnTipEl=null, dnTempoEl=null, dnTempoFrac=0.45, dnWorldSlow=1, dnZTop=12;
 const dnPanels={};
 const _dnRay=new THREE.Raycaster();
 const _dnV=new THREE.Vector3(), _dnV2=new THREE.Vector3(), _dnV3=new THREE.Vector3();
@@ -1901,6 +1901,9 @@ function makeDnPanel(id, opt){
     <button class="dn-x" title="Close" aria-label="Close">✕</button></div>
     <div class="dn-body"></div>`;
   root.appendChild(el);
+  // Bring a card to the front on any interaction so overlapping panels (and the
+  // Warp-tempo strip) never trap another card's contents underneath.
+  el.addEventListener('pointerdown', ()=>{ el.style.zIndex=++dnZTop; });
   const head=el.querySelector('.dn-head'), body=el.querySelector('.dn-body'), op=el.querySelector('.dn-op');
   const KEY='ewiCosmosDN_'+id;
   let st={}; try{ st=JSON.parse(localStorage.getItem(KEY)||'{}'); }catch(e){}
@@ -1931,7 +1934,7 @@ function makeDnPanel(id, opt){
 function dnPanel(id){
   if (dnPanels[id]) return dnPanels[id];
   if (id==='zoom')   dnPanels[id]=makeDnPanel('zoom',{ title:'Precision Zoom', icon:'🔍', x:300, y:76, build:buildZoomPanel });
-  else if (id==='coord') dnPanels[id]=makeDnPanel('coord',{ title:'Coordinates · X·Y·Z', icon:'🧭', x:300, y:300, build:buildCoordPanel });
+  else if (id==='coord') dnPanels[id]=makeDnPanel('coord',{ title:'Coordinates · Space (X·Y·Z)', icon:'🧭', x:300, y:300, build:buildCoordPanel });
   else if (id==='flights') dnPanels[id]=makeDnPanel('flights',{ title:'Flight Tracker', icon:'✈', x:588, y:76, build:buildFlightsPanel });
   else if (id==='navlinq') dnPanels[id]=makeDnPanel('navlinq',{ title:'NAVLINQ · midpoint', icon:'🛰', x:588, y:300, build:buildNavlinqPanel });
   return dnPanels[id];
@@ -1945,6 +1948,22 @@ function dnNearestBody(){
   for (const p of PLANETS){ const rec=planetMeshes[p.key]; if(rec) consider(p.key, rec.group.getWorldPosition(new THREE.Vector3()), p.size); }
   if (sun) consider('sun', sun.getWorldPosition(new THREE.Vector3()), 3);
   return best;
+}
+// Body the zoom + coordinate tools act on. When the user has explicitly SELECTED
+// a planet (clicked it, or picked it in the Scene list) the presets — Surface,
+// 100 km, 1 AU, Fit — always refer to THAT body; otherwise we fall back to the
+// body nearest the view centre so the tools still work with nothing selected.
+function dnBodyByKey(key){
+  if(!key) return null;
+  const k=String(key).toLowerCase();
+  if(k==='sun') return sun ? { key:'sun', center:sun.getWorldPosition(new THREE.Vector3()), sceneR:3 } : null;
+  const rec=planetMeshes[k]; if(!rec) return null;
+  const p=PLANETS.find(x=>x.key===k);
+  return { key:k, center:rec.group.getWorldPosition(new THREE.Vector3()), sceneR:p?p.size:1 };
+}
+function dnActiveBody(){
+  if (selected && selected.type==='planet' && selected.key){ const b=dnBodyByKey(selected.key); if(b) return b; }
+  return dnNearestBody();
 }
 function dnUpdateHUD(){
   if (!dnHudEl) return;
@@ -2097,7 +2116,7 @@ function dnParseZoom(raw){
   return { kind:'dist', unit, val, absolute:['au','ly','pc'].includes(unit), radii:conv==='radii', km: conv==='radii'?null:val*conv };
 }
 function dnApplyZoom(parsed, readoutEl){
-  const nb=dnNearestBody(); if(!nb){ if(readoutEl) readoutEl.textContent='No body in view.'; return; }
+  const nb=dnActiveBody(); if(!nb){ if(readoutEl) readoutEl.textContent='No body in view.'; return; }
   const rkm=BODY_R_KM[nb.key]||1, kmPerScene=rkm/nb.sceneR, name=nb.key.charAt(0).toUpperCase()+nb.key.slice(1);
   orbit.target.copy(nb.center);
   const curScene=camera.position.distanceTo(nb.center);
@@ -2127,7 +2146,7 @@ function dnApplyZoom(parsed, readoutEl){
 function buildZoomPanel(body){
   body.innerHTML=`<label>Distance, scale, or percentage</label>
     <input class="dn-in" id="dnZoomIn" placeholder="e.g. 500 km · 1 AU · ×2 · 300% · surface" autocomplete="off" spellcheck="false">
-    <div class="dn-hint">Understood: mm·m·km·mi·AU·ls·ld·ly·pc · N r (radii) · ×2 / *2 · 300% · “surface” · “fit”. Interpreted relative to the body nearest the view centre.</div>
+    <div class="dn-hint">Understood: mm·m·km·mi·AU·ls·ld·ly·pc · N r (radii) · ×2 / *2 · 300% · “surface” · “fit”. Applied to the <b>selected planet</b> (or, with nothing selected, the body nearest the view centre).</div>
     <div class="dn-read" id="dnZoomOut">Type a value and press Enter.</div>
     <div class="dn-rowbtn">
       <button class="dn-mini" data-q="surface">Surface</button>
@@ -2143,13 +2162,14 @@ function buildZoomPanel(body){
 /* ---- X·Y·Z / lat-long viewing card (feature 5) --------------------------- */
 function buildCoordPanel(body){
   body.innerHTML=`<canvas class="dn-gizmo" id="dnGizmo" width="244" height="150"></canvas>
-    <div class="dn-read" id="dnCoordOut" style="margin-top:9px">—</div>`;
+    <div class="dn-read" id="dnCoordOut" style="margin-top:9px">—</div>
+    <div class="dn-hint">Your point-of-view’s live X·Y·Z in 3-D space (heliocentric — the Sun is the origin), with ecliptic longitude/latitude. The lat·long line is the surface cheat-sheet for the focused body.</div>`;
 }
 function dnDrawGizmo(){
   const p=dnPanels.coord; if(!p||!p.el.classList.contains('on')) return;
   const cv=p.body.querySelector('#dnGizmo'); if(!cv) return;
   const g=cv.getContext('2d'), W=cv.width, H=cv.height; g.clearRect(0,0,W,H);
-  const nb=dnNearestBody(); if(!nb) return;
+  const nb=dnActiveBody(); if(!nb) return;
   const rel=_dnV.copy(camera.position).sub(nb.center);
   const r=rel.length()||1e-6;
   const lat=Math.asin(THREE.MathUtils.clamp(rel.y/r,-1,1))/DEG;
@@ -2173,9 +2193,24 @@ function dnDrawGizmo(){
     g.font='9px -apple-system,sans-serif'; g.fillText(lbl, ox+v.x*L*1.15-3, oy-v.y*L*1.15+3); };
   axis(bx,'#ff6b6b','X'); axis(by,'#4fd1c5','Y'); axis(bz,'#7c9bff','Z');
   const out=p.body.querySelector('#dnCoordOut');
-  if(out) out.innerHTML=`<b>${nb.key.charAt(0).toUpperCase()+nb.key.slice(1)}</b> frame<br>`+
-    `lat <b>${lat.toFixed(2)}°</b> · lon <b>${lon.toFixed(2)}°</b><br>`+
-    `alt <b>${altKm<=0?'at surface':fmtKm(altKm)}</b> · X ${rel.x.toFixed(2)} Y ${rel.y.toFixed(2)} Z ${rel.z.toFixed(2)}`;
+  if(out){
+    // The user's point-of-view IN SPACE — heliocentric, since the Sun sits at
+    // the scene origin. This is the coordinate of the camera itself, not Earth.
+    const cam=camera.position, dSun=cam.length()||1e-9;
+    const rAU=Math.pow(dSun/SCENE_K,2);                        // invert rS = SCENE_K·√r_AU
+    // scene (X,Y,Z) → ecliptic (x,y,z): x=X, y=−Z, z=Y  (auToScene maps x,z,−y)
+    const eLon=Math.atan2(-cam.z, cam.x)/DEG, eLat=Math.asin(THREE.MathUtils.clamp(cam.y/dSun,-1,1))/DEG;
+    const sunDist = rAU<1e-3 ? fmtKm(rAU*1.495978707e8) : (rAU<1?rAU.toFixed(4):rAU.toFixed(rAU<100?3:1))+' AU';
+    const hh='font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;color:#8b93ad';
+    const su='color:#8b93ad;font-weight:400';
+    const name=nb.key.charAt(0).toUpperCase()+nb.key.slice(1);
+    out.innerHTML=
+      `<div style="${hh}">Your POV · position in space</div>`+
+      `X <b>${cam.x.toFixed(2)}</b> · Y <b>${cam.y.toFixed(2)}</b> · Z <b>${cam.z.toFixed(2)}</b> <span style="${su}">scene units</span><br>`+
+      `Sun <b>${sunDist}</b> · ecliptic λ <b>${eLon.toFixed(2)}°</b> · β <b>${eLat.toFixed(2)}°</b>`+
+      `<div style="${hh};margin-top:7px">Relative to ${name} · surface cheat-sheet</div>`+
+      `lat <b>${lat.toFixed(2)}°</b> · lon <b>${lon.toFixed(2)}°</b> · alt <b>${altKm<=0?'at surface':fmtKm(altKm)}</b>`;
+  }
 }
 
 /* ---- Flight tracker (feature 6) — offline great-circle simulation -------- */
@@ -2301,14 +2336,29 @@ function dnTickFlightSim(dt){
 /* ---- Tempo control (bottom strip) + init + per-frame tick ---------------- */
 function dnBuildTempo(){
   dnTempoEl=document.createElement('div'); dnTempoEl.id='dnTempo';
-  dnTempoEl.style.cssText='position:absolute;left:50%;transform:translateX(-50%);bottom:112px;z-index:6;display:flex;align-items:center;gap:9px;background:rgba(12,14,24,.66);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:7px 13px;font-size:11px;color:#c6cde0';
-  dnTempoEl.innerHTML=`<span title="Symbolic traversal tempo — not literal faster-than-light; c is never exceeded">Warp tempo</span>
+  dnTempoEl.style.cssText='position:absolute;left:50%;transform:translateX(-50%);bottom:112px;z-index:11;display:flex;align-items:center;gap:9px;background:rgba(12,14,24,.66);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:7px 13px;font-size:11px;color:#c6cde0;touch-action:none';
+  dnTempoEl.innerHTML=`<span class="dn-grip" title="Drag to move this control" style="cursor:grab;color:#8b93ad;font-size:13px;line-height:1;user-select:none">⠿</span>
+    <span title="Symbolic traversal tempo — not literal faster-than-light; the speed of light c is never exceeded">Warp tempo</span>
     <input type="range" min="0" max="1000" value="450" style="width:150px;accent-color:#7c5cff">
     <span id="dnTempoLbl" style="min-width:66px;font-variant-numeric:tabular-nums;color:#fff">—</span>`;
   root.appendChild(dnTempoEl);
   const rng=dnTempoEl.querySelector('input'), lbl=dnTempoEl.querySelector('#dnTempoLbl');
   const upd=()=>{ dnTempoFrac=(+rng.value)/1000; lbl.textContent=fmtSeconds(dnTempoSymbolic()); };
   rng.addEventListener('input',upd); upd();
+  // Draggable by its grip (like every deep-nav card) so it never sits on top of
+  // another panel and traps its contents. Position persists on-device.
+  const TKEY='ewiCosmosDN_tempo';
+  try{ const st=JSON.parse(localStorage.getItem(TKEY)||'{}');
+    if(st.x!=null){ dnTempoEl.style.left=st.x+'px'; dnTempoEl.style.top=st.y+'px'; dnTempoEl.style.bottom='auto'; dnTempoEl.style.transform='none'; } }catch(_){}
+  const grip=dnTempoEl.querySelector('.dn-grip'); let gx=0,gy=0,gdrag=false;
+  grip.addEventListener('pointerdown',e=>{ gdrag=true; const r=dnTempoEl.getBoundingClientRect();
+    dnTempoEl.style.transform='none'; dnTempoEl.style.bottom='auto'; dnTempoEl.style.left=r.left+'px'; dnTempoEl.style.top=r.top+'px';
+    gx=e.clientX-r.left; gy=e.clientY-r.top; grip.style.cursor='grabbing'; try{grip.setPointerCapture(e.pointerId);}catch(_){}; e.preventDefault(); });
+  grip.addEventListener('pointermove',e=>{ if(!gdrag) return; const w=window.innerWidth,h=window.innerHeight;
+    const nx=Math.max(4,Math.min(w-dnTempoEl.offsetWidth-4,e.clientX-gx)), ny=Math.max(56,Math.min(h-40,e.clientY-gy));
+    dnTempoEl.style.left=nx+'px'; dnTempoEl.style.top=ny+'px'; });
+  grip.addEventListener('pointerup',e=>{ gdrag=false; grip.style.cursor='grab'; try{grip.releasePointerCapture(e.pointerId);}catch(_){}
+    try{ localStorage.setItem(TKEY,JSON.stringify({x:parseFloat(dnTempoEl.style.left)||0,y:parseFloat(dnTempoEl.style.top)||0})); }catch(_){}; });
 }
 function initDeepNav(){
   if(dnInited) return; dnInited=true;
