@@ -119,6 +119,30 @@ const EVENTS = [
   { date:'2026-04-03', name:'Jupiter–Io flux-tube aurora activity', type:'planetary', cat:'Planetary (non-Earth)', focus:'jupiter', note:'Io’s volcanism feeds a plasma torus; magnetospheric currents drive Jovian aurorae.' },
   { date:'2026-07-01', name:'Mars global dust-storm season onset', type:'planetary', cat:'Planetary (non-Earth)', focus:'mars', note:'Perihelion-season heating lifts dust; storms can grow to planet-encircling scale.' },
   { date:'2026-10-15', name:'Saturn ring-plane viewing geometry', type:'planetary', cat:'Planetary (non-Earth)', focus:'saturn', note:'Ring tilt relative to the Sun/observer changes the illumination geometry.' },
+  // ── Deep time — cosmic PAST (observed / dated evidence) ──
+  // These epochs sit outside the orbital-date model, so they carry a symbolic
+  // `epoch` label and a `conf` basis rather than a calendar date. Timescales are
+  // the current scientific consensus with honest uncertainty — no false precision.
+  { epoch:'13.8 Gyr ago', name:'The Big Bang — spacetime begins', type:'cosmic', cat:'Deep time — cosmic past', cosmic:true, conf:'established', note:'Age of the observable Universe: 13.787 ± 0.020 Gyr (Planck 2018, ΛCDM). The hot dense beginning of space, time, matter, and energy — anchored by the cosmic microwave background, light-element abundances, and cosmic expansion.' },
+  { epoch:'≈ 380,000 yr after t₀', name:'Recombination — the Universe turns transparent', type:'cosmic', cat:'Deep time — cosmic past', cosmic:true, conf:'established', note:'At ~3,000 K, electrons and protons combined into neutral hydrogen; light decoupled and streams to us today as the cosmic microwave background (T ≈ 2.725 K). Directly measured by COBE, WMAP, and Planck.' },
+  { epoch:'≈ 100–400 Myr after t₀', name:'Cosmic Dawn — the first stars ignite', type:'cosmic', cat:'Deep time — cosmic past', cosmic:true, conf:'empirical', note:'Population III stars end the “cosmic dark ages.” The exact onset is being refined; JWST now observes luminous galaxies within ~300–400 Myr of the Big Bang, tightening the range.' },
+  { epoch:'≈ 4.568 Gyr ago', name:'The Solar System forms', type:'cosmic', cat:'Deep time — cosmic past', cosmic:true, focus:'sun', conf:'established', note:'Collapse of a molecular-cloud fragment; the oldest solids (calcium-aluminium inclusions) are dated to 4.568 ± 0.001 Gyr by radiometric (Pb-Pb) methods. The Sun is a third-generation star.' },
+  { epoch:'≈ 4.51 Gyr ago', name:'Moon-forming giant impact', type:'cosmic', cat:'Deep time — cosmic past', cosmic:true, focus:'earth', conf:'empirical', note:'A Mars-sized body (“Theia”) struck the proto-Earth; debris coalesced into the Moon. Supported by lunar isotope ratios and dynamics, though impact details remain modeled.' },
+  // ── Deep time — cosmic PRESENT (measured now) ──
+  { epoch:'today · Sun age ≈ 4.6 Gyr', name:'The Sun at mid-main-sequence', type:'cosmic', cat:'Deep time — cosmic present', cosmic:true, focus:'sun', conf:'established', note:'The Sun fuses hydrogen steadily and brightens ~1% every ~110 Myr. It is roughly halfway through its ~10–11 Gyr main-sequence lifetime — a well-modeled, stable present.' },
+  { epoch:'now · closing ~110 km/s', name:'Andromeda approaches the Milky Way', type:'cosmic', cat:'Deep time — cosmic present', cosmic:true, conf:'empirical', note:'M31’s measured blueshift shows it moving toward us; Gaia proper motions constrain a likely future encounter. The Local Group is gravitationally bound against cosmic expansion.' },
+  // ── Deep time — cosmic FUTURE (physics-grounded projections; trillions of years+) ──
+  { epoch:'≈ +1.1 Gyr', name:'Earth’s biosphere under a brightening Sun', type:'cosmic', cat:'Deep time — cosmic future', cosmic:true, focus:'earth', conf:'empirical', note:'Rising solar luminosity is projected to push Earth past a moist-greenhouse threshold in ~1 Gyr, ending the long-term carbon–silicate habitability window. Grounded in stellar evolution + climate models.' },
+  { epoch:'≈ +4.5 Gyr', name:'Milky Way–Andromeda first passage', type:'cosmic', cat:'Deep time — cosmic future', cosmic:true, conf:'empirical', note:'The galaxies begin to merge into “Milkomeda.” Stars almost never collide (space is vast); orbits are reshuffled. Timing carries ~±1 Gyr from transverse-velocity uncertainty.' },
+  { epoch:'≈ +5–5.4 Gyr', name:'The Sun swells into a red giant', type:'cosmic', cat:'Deep time — cosmic future', cosmic:true, focus:'sun', conf:'established', note:'Core hydrogen exhausts; the Sun expands ~200×, likely engulfing Mercury and Venus and scorching Earth. A robust result of stellar-structure physics.' },
+  { epoch:'≈ +7–8 Gyr', name:'The Sun becomes a white dwarf', type:'cosmic', cat:'Deep time — cosmic future', cosmic:true, focus:'sun', conf:'established', note:'After shedding a planetary nebula, the Sun leaves an Earth-sized, carbon-oxygen ember that slowly cools over tens of billions of years. Standard low-mass stellar endpoint.' },
+  { epoch:'≈ +10¹⁴ yr (100 trillion yr)', name:'End of the Stelliferous Era', type:'cosmic', cat:'Deep time — cosmic future', cosmic:true, conf:'empirical', note:'Star formation ceases as galaxies exhaust cold gas; the last, longest-lived red dwarfs fade. The Universe dims from starlight to embers. Model-based (Adams & Laughlin) with wide but principled bounds.' },
+  { epoch:'≈ +10¹⁵–10²⁰ yr', name:'Degenerate Era — remnants and rogue worlds', type:'cosmic', cat:'Deep time — cosmic future', cosmic:true, conf:'empirical', note:'Only white dwarfs, neutron stars, brown dwarfs, and black holes remain. Gravitational encounters eject most planets and stars from galaxies; rare brown-dwarf collisions briefly rekindle fusion.' },
+  { epoch:'≈ +10³⁴–10³⁹ yr (if protons decay)', name:'Matter itself dissolves', type:'cosmic', cat:'Deep time — cosmic future', cosmic:true, conf:'speculative', note:'IF protons are unstable (predicted by some Grand Unified Theories but never observed; experiments set lifetimes > ~10³⁴ yr), ordinary matter slowly evaporates into radiation and light particles. Conditional on unconfirmed physics.' },
+  { epoch:'≈ +10⁴⁰ yr', name:'Black Hole Era', type:'cosmic', cat:'Deep time — cosmic future', cosmic:true, conf:'speculative', note:'If baryonic matter has decayed, black holes are the last macroscopic structures — slowly bleeding mass as Hawking radiation. Rests on proton decay plus semiclassical gravity.' },
+  { epoch:'≈ +10¹⁰⁰ yr', name:'The last black holes evaporate', type:'cosmic', cat:'Deep time — cosmic future', cosmic:true, conf:'speculative', note:'Supermassive black holes finish evaporating around a googol years via Hawking radiation — an established mechanism extrapolated across almost unimaginable time. The cosmos approaches a thin, cold bath of particles.' },
+  { epoch:'≈ +10¹⁰⁰ yr and beyond', name:'Heat Death — maximum entropy', type:'cosmic', cat:'Deep time — cosmic future', cosmic:true, conf:'speculative', note:'Under an eternally accelerating (de Sitter) expansion, the Universe trends toward uniform, near-zero-temperature equilibrium where no work is possible. Anchored in the 2nd law of thermodynamics; the ultimate fate hinges on the still-uncertain nature of dark energy.' },
+  { epoch:'≈ +10^(10⁷⁶) yr', name:'Poincaré recurrence (theoretical horizon)', type:'cosmic', cat:'Deep time — cosmic future', cosmic:true, conf:'speculative', note:'On timescales far beyond the heat death, statistical fluctuations could — in principle — momentarily revisit an ordered state. A boundary-of-physics thought experiment, not a prediction. Marked explicitly as speculative.' },
 ];
 
 /* ---------------------------------------------------------------------------
@@ -356,7 +380,7 @@ function buildDOM(){
   EVENTS.forEach((e,i)=>{ let g=cats.find(c=>c.cat===(e.cat||'Events')); if(!g){ g={cat:e.cat||'Events', items:[]}; cats.push(g); } g.items.push(i); });
   sel.innerHTML = '<option value="">Jump to an event…</option>' +
     cats.map(g=>`<optgroup label="${g.cat}">`+
-      g.items.map(i=>`<option value="${i}">${EVENTS[i].date} · ${EVENTS[i].name}</option>`).join('')+
+      g.items.map(i=>`<option value="${i}">${EVENTS[i].date || EVENTS[i].epoch} · ${EVENTS[i].name}</option>`).join('')+
       `</optgroup>`).join('');
   sel.addEventListener('change', ()=>{ if (sel.value!=='') jumpToEvent(+sel.value); });
 
@@ -660,10 +684,26 @@ function onResize(){
 function jumpToEvent(i){
   const e = EVENTS[i];
   setRealtime(false);
-  simDate = new Date(e.date+'T00:00:00Z');
   playing = false; playBtn.textContent = '▶';
-  updatePlanets();
   clearMeteors(); clearEventPins();
+
+  // Cosmic-scale epochs (deep past → trillions of years ahead) live outside the
+  // orbital-date model. Keep the current solar-system view, frame the relevant
+  // body, and present the epoch with an explicit confidence basis so the claim's
+  // certainty is always visible — established fact vs. projection vs. speculation.
+  if (e.cosmic){
+    eventNoteEl.style.display='block';
+    eventNoteEl.innerHTML = confChip(e.conf) +
+      `<b>${e.name}</b> <span style="color:#8a93a8">· ${e.epoch}</span>` +
+      `<br><span style="color:#c6cde0">${e.note}</span>`;
+    if (e.focus && planetMeshes[e.focus]) focusKey(e.focus); else focusKey('earth');
+    setCamMode('cinematic');
+    toast('Deep time · ' + e.epoch);
+    return;
+  }
+
+  simDate = new Date(e.date+'T00:00:00Z');
+  updatePlanets();
   if (e.type==='meteor') startMeteors();
   // drop a pin at the event's Earth location, if it has one
   if (Array.isArray(e.where)) earthPin(e.where[0], e.where[1], 0xff5a7a, e.name, true);
@@ -672,12 +712,27 @@ function jumpToEvent(i){
   const link = e.link==='trading'
     ? `<br><a href="${tradingURL()}" target="_blank" rel="noopener" style="color:#b7a5ff;font-weight:700;text-decoration:none">Open EWI Trading Command Center →</a>`
     : '';
-  eventNoteEl.innerHTML = `<b>${e.name}</b><br><span style="color:#c6cde0">${e.note}</span>${link}`;
+  eventNoteEl.innerHTML = (e.conf ? confChip(e.conf) : '') +
+    `<b>${e.name}</b><br><span style="color:#c6cde0">${e.note}</span>${link}`;
   // frame the relevant body
   if (e.focus && planetMeshes[e.focus]) focusKey(e.focus);
   else focusKey('earth');
   setCamMode('cinematic');
   toast('Jumped to ' + e.date);
+}
+
+/* A small, honest certainty label so cosmic-scale claims never imply false
+   precision: established science vs. empirically-supported vs. speculative. */
+function confChip(conf){
+  const map = {
+    established: ['Established science', '#16c784', 'rgba(22,199,132,.14)'],
+    empirical:   ['Empirically supported', '#f0b429', 'rgba(240,180,41,.14)'],
+    speculative: ['Speculative projection', '#8a93a8', 'rgba(138,147,168,.14)'],
+  };
+  const c = map[conf]; if (!c) return '';
+  return `<span style="display:inline-block;font-size:10.5px;font-weight:700;`+
+    `letter-spacing:.02em;padding:2px 8px;border-radius:999px;color:${c[1]};`+
+    `background:${c[2]};border:1px solid ${c[1]}55;margin-bottom:6px">${c[0]}</span><br>`;
 }
 
 /* Best-effort URL for the EWI Trading Command Center — works from the local

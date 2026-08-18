@@ -1204,7 +1204,7 @@
       cs.EVENTS.forEach((e,i)=>{ let g=groups.find(x=>x.cat===(e.cat||"Events")); if(!g){ g={cat:e.cat||"Events",items:[]}; groups.push(g); } g.items.push(i); });
       sel.innerHTML='<option value="">Jump to an event…</option>'+
         groups.map(g=>`<optgroup label="${g.cat}">`+
-          g.items.map(i=>`<option value="${i}">${cs.EVENTS[i].date} · ${cs.EVENTS[i].name}</option>`).join('')+
+          g.items.map(i=>`<option value="${i}">${cs.EVENTS[i].date || cs.EVENTS[i].epoch} · ${cs.EVENTS[i].name}</option>`).join('')+
           `</optgroup>`).join('');
     };
     fill();
