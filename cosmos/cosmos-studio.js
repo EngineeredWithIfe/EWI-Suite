@@ -228,6 +228,10 @@ let navFlyEngaged = false;                    // true while a fly-to-midpoint is
 // the focal point (orbit.target) freely to a new X·Y·Z in space, decoupled from
 // the currently-focused body — press G to toggle (tap the ✥ Slide button too).
 let panMode = false;
+// Align-to-plane view state: snap the camera to look straight at a principal
+// coordinate plane — X·Y (front), X·Z (top), Y·Z (side) — keys 1 / 2 / 3.
+let viewPlane = null;                         // 'xy' | 'xz' | 'yz' | null (free orbit)
+let viewPlaneSide = 1;                         // +1 / -1 → which side of the axis we view from
 // Real-time tracking (Task 3)
 let realtime = false;
 let cineLastInput = 0;                         // ms — recent user camera input pauses auto-direction
@@ -408,6 +412,11 @@ function buildDOM(){
       <button class="st-btn ghost" id="stImport" title="Import a model, image, video, or audio">⬆ <span class="lbl">Import</span></button>
       <button class="st-btn ghost" id="stNav" title="NAVLINQ — pick 2+ bodies to compute their gravity-weighted midpoint" aria-pressed="false">◎ <span class="lbl">NAVLINQ</span></button>
       <button class="st-btn ghost" id="stPan" title="Slide / truck (G) — drag or use a one-finger / trackpad gesture to glide the focal point to a new X·Y·Z, independent of the focused body" aria-pressed="false">✥ <span class="lbl">Slide</span></button>
+      <div class="st-seg" role="group" aria-label="Align the view to a principal plane" title="Snap the camera to look straight at a coordinate plane — front (X·Y), top (X·Z) or side (Y·Z). Keys 1 / 2 / 3; press again to view from the opposite side. Then drag to fine-tune, wheel / pinch to zoom, ✥ Slide to reframe.">
+        <button class="st-btn" id="stPlaneXY" title="Front view — look at the X·Y plane, down the Z axis (X → right, Y → up). Key 1" aria-pressed="false">XY</button>
+        <button class="st-btn" id="stPlaneXZ" title="Top view — look at the X·Z plane, down the Y axis (X → right, Z → up). Key 2" aria-pressed="false">XZ</button>
+        <button class="st-btn" id="stPlaneYZ" title="Side view — look at the Y·Z plane, down the X axis (Z → right, Y → up). Key 3" aria-pressed="false">YZ</button>
+      </div>
       <button class="st-btn ghost" id="stLoc" title="Drop a pin at your real-world location on Earth">📍 <span class="lbl">Location</span></button>
       <button class="st-btn ghost on" id="dnPins" title="Toggle waypoint thumbtacks" aria-pressed="true">📌 <span class="lbl">Pins</span></button>
       <button class="st-btn ghost" id="dnZoom" title="Precision zoom — type a distance, %, or scale">🔍 <span class="lbl">Zoom</span></button>
@@ -461,7 +470,7 @@ function buildDOM(){
     </div>
 
     <div class="st-hint">
-      Explore: drag orbit · scroll zoom · right-drag pan · <b>W/E/R</b> move·rotate·scale · <b>F</b> focus · <b>Del</b> remove · gamepad supported
+      Explore: drag orbit · scroll zoom · right-drag pan · <b>1/2/3</b> front·top·side view · <b>G</b> slide · <b>W/E/R</b> move·rotate·scale · <b>F</b> focus · <b>Del</b> remove · gamepad supported
     </div>
 
     <div class="st-drop">Drop a model, image, video, or audio to place it in 3D</div>
@@ -504,6 +513,9 @@ function buildDOM(){
   root.querySelector('#stFile').addEventListener('change', e=>{ handleFiles(e.target.files); e.target.value=''; });
   root.querySelector('#stNav').addEventListener('click', toggleNavMode);
   root.querySelector('#stPan').addEventListener('click', ()=>setPanMode(!panMode));
+  root.querySelector('#stPlaneXY').addEventListener('click', ()=>alignViewPlane('xy'));
+  root.querySelector('#stPlaneXZ').addEventListener('click', ()=>alignViewPlane('xz'));
+  root.querySelector('#stPlaneYZ').addEventListener('click', ()=>alignViewPlane('yz'));
   root.querySelector('#stLoc').addEventListener('click', dropMyLocation);
   root.querySelector('#dnPins').addEventListener('click', ()=>dnTogglePins());
   root.querySelector('#dnZoom').addEventListener('click', ()=>dnPanel('zoom').toggle());
@@ -555,6 +567,9 @@ function buildScene(){
 
   orbit = new OrbitControls(camera, renderer.domElement);
   orbit.enableDamping = true; orbit.dampingFactor = 0.08;
+  // Any manual camera interaction (orbit / pan) leaves an aligned plane view →
+  // clear the highlighted plane button so the UI honestly reflects the state.
+  orbit.addEventListener('start', ()=>{ if (viewPlane!==null){ viewPlane=null; updatePlaneBtns(); } });
   // Deep-zoom envelope: from just above a body's surface (sub-thousandth of a
   // scene unit) out to neighbouring-star distances. The custom dolly clamps to these.
   orbit.maxDistance = 5.0e6; orbit.minDistance = 6e-4;
@@ -1672,6 +1687,45 @@ function setPanMode(on){
     : 'Slide mode off — drag orbits the focused body again');
 }
 
+/* Align-to-plane views — snap the camera to look straight at a principal
+   coordinate plane while keeping the current focal point (orbit.target) and
+   distance: front = X·Y (down the Z axis), top = X·Z (down the Y axis),
+   side = Y·Z (down the X axis). This is the CAD / engineering orientation
+   convention (used across aerospace, robotics, gaming, manufacturing, GIS),
+   layered on top of free orbit, Slide (pan) and zoom — nothing else changes.
+   Pressing the same plane again flips to the opposite side. Keys 1 / 2 / 3. */
+function alignViewPlane(plane){
+  if (!orbit || !camera || !(plane==='xy'||plane==='xz'||plane==='yz')) return;
+  if (navFlyEngaged){ navFlyEngaged=false; navUpdateFlyBtn(); }   // supersede a NAVLINQ fly-to
+  const tgt = orbit.target.clone();
+  const off = camera.position.clone().sub(tgt);
+  const d   = Math.max(off.length(), orbit.minDistance*1.5, 1e-4);   // keep the current standoff
+  // Keep the current hemisphere; a repeat press on the active plane flips it.
+  const comp = plane==='xy' ? off.z : plane==='yz' ? off.x : off.y;
+  let side = comp>=0 ? 1 : -1;
+  if (viewPlane===plane) side = -viewPlaneSide;
+  viewPlane = plane; viewPlaneSide = side;
+  let dir;
+  if (plane==='xy')      dir = new THREE.Vector3(0, 0, side);        // front — X → right, Y → up
+  else if (plane==='yz') dir = new THREE.Vector3(side, 0, 0);        // side  — Z → right, Y → up
+  else                   dir = new THREE.Vector3(0, side, 0.001);    // top — X → right, Z → up; a ~0.057° tilt (≈0.1% of the radius) keeps the azimuth defined, avoiding the exact pole singularity — imperceptible, so orbiting stays stable
+  dir.normalize();
+  const end = tgt.clone().addScaledVector(dir, d);
+  zoom3D.active = false;
+  dnFlight = { active:true, t:0, dur: Math.min(0.85, Math.max(0.35, dnTempoDur()*0.5)), tag:'plane',
+    p0: camera.position.clone(), t0: orbit.target.clone(), p1: end, t1: tgt };
+  updatePlaneBtns();
+  const nm = plane==='xy' ? 'front (X·Y)' : plane==='xz' ? 'top-down (X·Z)' : 'side (Y·Z)';
+  toast('Aligned to the '+nm+' view — drag to fine-tune the angle, wheel / pinch to zoom, ✥ Slide to reframe');
+}
+function updatePlaneBtns(){
+  if (!root) return;
+  [['xy','#stPlaneXY'],['xz','#stPlaneXZ'],['yz','#stPlaneYZ']].forEach(([p,sel])=>{
+    const b = root.querySelector(sel);
+    if (b){ b.classList.toggle('on', viewPlane===p); b.setAttribute('aria-pressed', String(viewPlane===p)); }
+  });
+}
+
 function focusKey(key){
   const rec = planetMeshes[key]; if (!rec) return;
   const p = PLANETS.find(x=>x.key===key);
@@ -2011,6 +2065,9 @@ function onKey(e){
   else if (k===' '){ playing=!playing; playBtn.textContent=playing?'⏸':'▶'; e.preventDefault(); }
   else if (k==='c'){ setCamMode(camMode==='cinematic'?'explore':'cinematic'); }
   else if (k==='g'){ setPanMode(!panMode); }
+  else if (k==='1'){ alignViewPlane('xy'); }
+  else if (k==='2'){ alignViewPlane('xz'); }
+  else if (k==='3'){ alignViewPlane('yz'); }
 }
 
 window.addEventListener('gamepadconnected', e=>{ gamepadIndex = e.gamepad.index; toast('Controller connected'); });
@@ -2796,6 +2853,10 @@ window.__cosmosStudio = { open:openStudio, close, heliocentric, auToScene, PLANE
   navToggle:(id)=>navToggleBody(id), navFlyToMidpoint,
   get navFlyEngaged(){ return navFlyEngaged; }, fmtDurTech:(s)=>fmtDurTech(s), fmtDurLay:(s)=>fmtDurLay(s),
   setPanMode:(on)=>setPanMode(on), get panMode(){ return panMode; },
+  alignViewPlane:(p)=>alignViewPlane(p), get viewPlane(){ return viewPlane; }, get viewPlaneSide(){ return viewPlaneSide; },
+  __tick:(dt)=>{ try{ deepNavTick(dt||0.016); orbit.update(); }catch(_){} },   // deterministic frame advance for automated validation (RAF-independent)
+  get camDist(){ return camera ? +camera.position.distanceTo(orbit.target).toFixed(6) : null; },
+  get camOffset(){ if(!camera) return null; const o=camera.position.clone().sub(orbit.target); return { x:+o.x.toFixed(6), y:+o.y.toFixed(6), z:+o.z.toFixed(6) }; },
   get navSelection(){ return [...navSel]; }, get realtime(){ return realtime; },
   get navMidpoint(){ const R=navComputeMidpoints(); if(!R) return null;
     return { count:R.nodes.length, interstellar:R.anyStar, scale:R.phys.scale,
