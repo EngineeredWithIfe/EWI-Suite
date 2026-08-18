@@ -214,6 +214,7 @@ let cineT = 0, cineFocusKey = 'earth', cineNextCut = 6;
 let cineFocusOn = false;                      // cinematic sub-mode: true = locked on one body
 let cineFocusId = null;                        // id of the focused body of mass
 const cineHist = [];                           // focus history for the ← (back) neighbour step
+let cineVisited = new Set();                    // bodies already toured (→ always hops to nearest UNVISITED)
 let gamepadIndex = null;
 let idSeq = 1;
 
@@ -862,11 +863,15 @@ function cineName(id){
   const im = imported.find(x=>x.id===id); if (im) return im.name;
   return '—';
 }
-function cineNearestOther(id, exclude){
+function cineNearestUnvisited(id){
+  // Nearest body (true 3D distance, omnidirectional) that hasn't been toured yet.
+  // Skipping visited bodies makes → a greedy nearest-neighbour tour that reaches
+  // EVERY body exactly once — so every planet is guaranteed reachable and the
+  // camera never loops among a close inner cluster (e.g. Earth↔Moon↔Venus).
   if (cineCenterOf(id, _cineA) < 0) return null;
   let best = null, bestD = Infinity;
   for (const cand of cineFocusList()){
-    if (cand===id || cand===exclude) continue;
+    if (cand===id || cineVisited.has(cand)) continue;
     if (cineCenterOf(cand, _cineB) < 0) continue;
     const d = _cineA.distanceTo(_cineB);
     if (d < bestD){ bestD = d; best = cand; }
@@ -885,7 +890,9 @@ function cineNearestToCamera(){
 function cineEnterFocus(id){
   if (!id) return;
   if (camMode!=='cinematic') setCamMode('cinematic');
-  cineFocusOn = true; cineFocusId = id; cineLastInput = 0;
+  cineFocusOn = true; cineFocusId = id;
+  cineVisited = new Set([id]); cineHist.length = 0;
+  cineLastInput = 0;
   cineUpdateDock();
 }
 function cineFocusSelected(){
@@ -898,7 +905,7 @@ function cineFocusSelected(){
   cineEnterFocus(id);
 }
 function cineAuto(){
-  cineFocusOn = false; cineFocusId = null; cineHist.length = 0;
+  cineFocusOn = false; cineFocusId = null; cineHist.length = 0; cineVisited = new Set();
   cineNextCut = 0; cineLastInput = 0;
   if (camMode!=='cinematic') setCamMode('cinematic'); else cineUpdateDock();
 }
@@ -906,13 +913,18 @@ function cineStep(dir){
   if (camMode!=='cinematic') setCamMode('cinematic');
   if (!cineFocusOn || !cineFocusId){ cineFocusSelected(); return; }
   if (dir < 0){
+    // ← retrace the tour one body at a time.
     const prev = cineHist.pop();
-    if (prev != null){ cineFocusId = prev; cineLastInput = 0; cineUpdateDock(); return; }
+    if (prev != null){ cineFocusId = prev; cineLastInput = 0; cineUpdateDock(); }
+    return;
   }
-  const cameFrom = cineHist.length ? cineHist[cineHist.length-1] : null;
-  const next = cineNearestOther(cineFocusId, dir>0 ? cameFrom : null);
+  // → hop to the nearest not-yet-visited body; when the full tour of every body
+  // is done, start a fresh loop from the current one so it keeps cycling.
+  let next = cineNearestUnvisited(cineFocusId);
+  if (!next){ cineVisited = new Set([cineFocusId]); next = cineNearestUnvisited(cineFocusId); }
   if (next){
-    if (dir>0) cineHist.push(cineFocusId);
+    cineHist.push(cineFocusId);
+    cineVisited.add(next);
     cineFocusId = next; cineLastInput = 0; cineUpdateDock();
   }
 }
