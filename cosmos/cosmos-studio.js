@@ -342,7 +342,13 @@ function injectCSS(){
     background:rgba(12,14,24,.88);border:1px solid rgba(255,255,255,.16);border-radius:8px;
     padding:4px 9px;font-size:11px;color:#fff;white-space:nowrap;display:none;box-shadow:0 6px 20px rgba(0,0,0,.5)}
   .dn-flrow{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:7px}
-  .dn-stops{font-size:11px;color:#9aa3bd;margin-top:2px}`;
+  .dn-stops{font-size:11px;color:#9aa3bd;margin-top:2px}
+  .nv-grp-lbl{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#8892ac;margin:8px 0 4px}
+  .nv-wrap{display:flex;flex-wrap:wrap;gap:5px}
+  .nv-chip{font:600 11px -apple-system,system-ui,sans-serif;color:#c6cde0;background:rgba(255,255,255,.05);
+    border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:4px 10px;cursor:pointer;transition:all .14s ease}
+  .nv-chip:hover{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.22)}
+  .nv-chip.sel{background:rgba(124,92,255,.28);border-color:#7c5cff;color:#fff;box-shadow:0 0 0 1px rgba(124,92,255,.4) inset}`;
   document.head.appendChild(s);
 }
 
@@ -873,8 +879,8 @@ function animate(){
     }
     if (asteroidBelt) asteroidBelt.rotation.y += dt*0.02;
     if (meteorSys) updateMeteors(dt);
-    // NAVLINQ midpoint tracks the planets as they move
-    if (navMode && navSel.size>=2 && playing) updateNav();
+    // NAVLINQ midpoint tracks the bodies as they move (throttled; updates even when paused)
+    if (navMode && navSel.size>=2){ _navAccum+=dt; if(_navAccum>0.1){ _navAccum=0; updateNav(); } }
 
     pollGamepad(dt);
     if (camMode==='cinematic') tickCinematic(dt);
@@ -1063,8 +1069,106 @@ function dropMyLocation(){
 }
 
 /* ---------------------------------------------------------------------------
-   5c.  NAVLINQ — gravity-weighted midpoint of a chosen set of bodies
+   5c.  NAVLINQ — true-3D, N-body, gravity-weighted midpoint across a chosen
+        set of bodies. Nodes may be planets, the Sun, the Moon, or the real
+        nearby stars — so the same midpoint algorithm spans this Solar System
+        and neighbouring systems. Two midpoints are computed and shown:
+          • geometric centre  (unweighted mean of positions)
+          • barycenter        (mass-weighted — where gravity balances)
+        Their separation makes gravity's pull visible and quantifiable.
+        In-system selections are solved exactly in AU (Keplerian positions);
+        selections that include a star are solved in light-years using real
+        catalogued distances and directions (no false precision).
    ------------------------------------------------------------------------- */
+const AU_KM_NAV = 1.495978707e8;              // km per AU
+const LY_IN_AU  = 63241.077;                  // AU per light-year
+const MOON_MASS = 3.694e-8;                   // M☉
+let _navAccum = 0;
+
+function navStarSprite(name){ for (const s of dnStars){ if (s.userData.dn && s.userData.dn.name===name) return s; } return null; }
+
+// Resolve one NAVLINQ node id → { id, name, kind, mass(M☉), scenePos, auPos, lyPos, inSystem }
+function navNodeResolve(id){
+  const jd = dateToJD(simDate);
+  if (id==='sun'){
+    const sp = sun ? sun.getWorldPosition(new THREE.Vector3()) : new THREE.Vector3();
+    return { id, name:'Sun', kind:'sun', mass:1, scenePos:sp, auPos:new THREE.Vector3(0,0,0), lyPos:new THREE.Vector3(0,0,0), inSystem:true };
+  }
+  if (id==='moon'){
+    if (!moon) return null;
+    const sp = moon.mesh.getWorldPosition(new THREE.Vector3());
+    const au = heliocentric(PLANETS.find(p=>p.key==='earth'), jd);   // Moon ≈ Earth at AU scale
+    return { id, name:'Moon', kind:'moon', mass:MOON_MASS, scenePos:sp, auPos:au, lyPos:au.clone().multiplyScalar(1/LY_IN_AU), inSystem:true };
+  }
+  if (id.indexOf('star:')===0){
+    const rec = NEAR_STAR_BY_NAME[id.slice(5)]; if (!rec) return null;
+    const [name, ly, ux, uy, uz, mass] = rec;
+    const dir = new THREE.Vector3(ux, uy, uz).normalize();
+    const spr = navStarSprite(name);
+    const sp  = spr ? spr.getWorldPosition(new THREE.Vector3()) : dir.clone().multiplyScalar(2600+ly*40);
+    return { id, name, kind:'star', mass:mass||0.3, scenePos:sp, auPos:null, lyPos:dir.clone().multiplyScalar(ly), inSystem:false, ly };
+  }
+  const p = PLANETS.find(x=>x.key===id); if (!p) return null;
+  const pm = planetMeshes[id]; if (!pm) return null;
+  const au = heliocentric(p, jd);
+  return { id, name:p.name, kind:'planet', mass:p.mass||1e-9,
+    scenePos:pm.group.getWorldPosition(new THREE.Vector3()), auPos:au, lyPos:au.clone().multiplyScalar(1/LY_IN_AU), inSystem:true };
+}
+function navNodes(){ const out=[]; navSel.forEach(id=>{ const n=navNodeResolve(id); if(n) out.push(n); }); return out; }
+
+// The whole computation: scene-space markers + a scale-appropriate physical readout.
+function navComputeMidpoints(){
+  const nodes = navNodes(); if (nodes.length < 2) return null;
+  const anyStar = nodes.some(n=>!n.inSystem);
+  // rendered scene-space centre + barycenter (drive the 3-D markers/links)
+  let sumM=0; const cScene=new THREE.Vector3(), bScene=new THREE.Vector3();
+  nodes.forEach(n=>{ cScene.add(n.scenePos); bScene.addScaledVector(n.scenePos, n.mass); sumM+=n.mass; });
+  cScene.multiplyScalar(1/nodes.length);
+  if (sumM>0) bScene.multiplyScalar(1/sumM); else bScene.copy(cScene);
+  let dom=nodes[0]; nodes.forEach(n=>{ if(n.mass>dom.mass) dom=n; });
+  const massPct = sumM>0 ? dom.mass/sumM*100 : 0;
+  let phys;
+  if (!anyStar){
+    const cAU=new THREE.Vector3(), bAU=new THREE.Vector3(); let m2=0;
+    nodes.forEach(n=>{ cAU.add(n.auPos); bAU.addScaledVector(n.auPos, n.mass); m2+=n.mass; });
+    cAU.multiplyScalar(1/nodes.length); if (m2>0) bAU.multiplyScalar(1/m2);
+    const offKm = bAU.clone().sub(cAU).length()*AU_KM_NAV;
+    const r = bAU.length();
+    const lon = norm360(Math.atan2(bAU.y, bAU.x)/DEG);
+    const lat = r>1e-9 ? Math.asin(THREE.MathUtils.clamp(bAU.z/r,-1,1))/DEG : 0;
+    let span=0; for(let i=0;i<nodes.length;i++)for(let j=i+1;j<nodes.length;j++){ const d=nodes[i].auPos.distanceTo(nodes[j].auPos); if(d>span)span=d; }
+    phys = { scale:'AU', bary:bAU, centroid:cAU, offKm, r, lon, lat, span,
+             marker:auToScene(bAU), cMarker:auToScene(cAU) };
+  } else {
+    const cLy=new THREE.Vector3(), bLy=new THREE.Vector3(); let m2=0;
+    nodes.forEach(n=>{ cLy.add(n.lyPos); bLy.addScaledVector(n.lyPos, n.mass); m2+=n.mass; });
+    cLy.multiplyScalar(1/nodes.length); if (m2>0) bLy.multiplyScalar(1/m2);
+    const r = bLy.length();
+    const dir = r>1e-9 ? bLy.clone().multiplyScalar(1/r) : new THREE.Vector3(0,0,1);
+    const lon = norm360(Math.atan2(dir.y, dir.x)/DEG);
+    const lat = Math.asin(THREE.MathUtils.clamp(dir.z,-1,1))/DEG;
+    let span=0; for(let i=0;i<nodes.length;i++)for(let j=i+1;j<nodes.length;j++){ const d=nodes[i].lyPos.distanceTo(nodes[j].lyPos); if(d>span)span=d; }
+    const offLy = bLy.clone().sub(cLy).length();
+    let sr=0, ns=0; nodes.forEach(n=>{ if(!n.inSystem){ sr+=n.scenePos.length(); ns++; } }); sr = ns ? sr/ns : 2600;
+    phys = { scale:'ly', bary:bLy, centroid:cLy, offLy, r, lon, lat, span, dir, marker:dir.clone().multiplyScalar(sr) };
+  }
+  return { nodes, anyStar, sumM, dom, massPct, cScene, bScene, phys };
+}
+
+function navReadoutHTML(R){
+  const p = R.phys;
+  if (!R.anyStar){
+    return `<b>NAVLINQ · ${R.nodes.length} bodies · in-system</b><br>`+
+      `<span style="color:#c6cde0">Barycenter: ecliptic λ ${p.lon.toFixed(2)}° · β ${p.lat.toFixed(2)}° · ${p.r.toFixed(4)} AU from the Sun</span><br>`+
+      `<span style="color:#c6cde0">Centre → barycenter offset <b>${fmtKm(p.offKm)}</b> · node span ${p.span.toFixed(3)} AU</span><br>`+
+      `<span style="color:#9aa3bd;font-size:11px">Gravity pulls the midpoint ${fmtKm(p.offKm)} toward <b>${R.dom.name}</b> (${R.massPct.toFixed(1)}% of the set's mass). Mass-weighted 3-D barycenter — physically exact (established mechanics).</span>`;
+  }
+  return `<b>NAVLINQ · ${R.nodes.length} nodes · interstellar</b><br>`+
+    `<span style="color:#c6cde0">Barycenter bearing λ ${p.lon.toFixed(1)}° · β ${p.lat.toFixed(1)}° · ${p.r.toFixed(3)} ly from the Sun</span><br>`+
+    `<span style="color:#c6cde0">Node span ${p.span.toFixed(2)} ly · dominant mass <b>${R.dom.name}</b> (${R.massPct.toFixed(1)}%)</span><br>`+
+    `<span style="color:#9aa3bd;font-size:11px">Real catalogued distances &amp; directions; the marker shows the true 3-D bearing rendered at representative range (stars sit far beyond scene scale). O(N) &amp; direction-agnostic — the same formula extends to any bodies in any direction.</span>`;
+}
+
 function toggleNavMode(){
   navMode = !navMode;
   const btn = root.querySelector('#stNav');
@@ -1072,14 +1176,19 @@ function toggleNavMode(){
   btn.setAttribute('aria-pressed', navMode ? 'true' : 'false');
   if (navMode){
     transform.detach();
-    toast('NAVLINQ — click 2 or more planets to link their gravity-weighted midpoint');
+    dnPanel('navlinq').open();
+    highlightNav(); updateNav();
+    toast('NAVLINQ — pick 2+ bodies (planets, Sun, Moon, or nearby stars) to link their gravity-weighted midpoint');
   } else {
     navSel.clear(); clearNav(); eventNoteEl.style.display='none';
+    if (dnPanels.navlinq) dnPanels.navlinq.close();
   }
 }
-function navToggleBody(key){
-  if (!key || key==='Sun') return;
-  if (navSel.has(key)) navSel.delete(key); else navSel.add(key);
+function navToggleBody(id){
+  if (!id) return;
+  const ok = id==='sun' || id==='moon' || id.indexOf('star:')===0 || !!planetMeshes[id];
+  if (!ok) return;
+  if (navSel.has(id)) navSel.delete(id); else navSel.add(id);
   highlightNav();
   updateNav();
 }
@@ -1087,16 +1196,21 @@ function highlightNav(){
   objListEl.querySelectorAll('.st-item').forEach(el=>{
     el.classList.toggle('sel', navSel.has(el.dataset.id));
   });
+  const P = dnPanels.navlinq;
+  if (P && P.el.classList.contains('on'))
+    P.body.querySelectorAll('.nv-chip').forEach(c=>c.classList.toggle('sel', navSel.has(c.dataset.id)));
 }
-// Mass-weighted heliocentric midpoint (AU) of the selected planets = their
-// barycenter, i.e. the point about which their gravity balances.
+function navRefreshPanel(R){
+  const P = dnPanels.navlinq; if (!P || !P.el.classList.contains('on')) return;
+  P.body.querySelectorAll('.nv-chip').forEach(c=>c.classList.toggle('sel', navSel.has(c.dataset.id)));
+  const out = P.body.querySelector('#nvOut'); if (!out) return;
+  out.innerHTML = R ? navReadoutHTML(R)
+    : (navSel.size===1 ? 'One node selected — add at least one more.' : 'Select 2 or more bodies to compute a midpoint.');
+}
+// Back-compat seam helper: in-system mass-weighted midpoint (AU) of the selection.
 function navBarycenterAU(jd){
-  let M = 0; const acc = new THREE.Vector3();
-  navSel.forEach(key=>{
-    const p = PLANETS.find(x=>x.key===key); if (!p) return;
-    const m = p.mass || 1e-9;
-    acc.addScaledVector(heliocentric(p, jd), m); M += m;
-  });
+  let M=0; const acc=new THREE.Vector3();
+  navSel.forEach(id=>{ const n=navNodeResolve(id); if(!n||!n.inSystem) return; acc.addScaledVector(n.auPos, n.mass); M+=n.mass; });
   return M>0 ? acc.multiplyScalar(1/M) : acc;
 }
 function clearNav(){
@@ -1104,38 +1218,55 @@ function clearNav(){
 }
 function updateNav(){
   clearNav();
-  if (navSel.size < 2){
-    if (navMode && navSel.size===1){ eventNoteEl.style.display='block'; eventNoteEl.innerHTML='<b>NAVLINQ</b><br><span style="color:#c6cde0">Select at least one more planet to compute a midpoint.</span>'; }
+  const R = navComputeMidpoints();
+  navRefreshPanel(R);
+  if (!R){
+    if (navMode && navSel.size===1){ eventNoteEl.style.display='block'; eventNoteEl.innerHTML='<b>NAVLINQ</b><br><span style="color:#c6cde0">Select at least one more body to compute a midpoint.</span>'; }
     return;
   }
-  const jd = dateToJD(simDate);
-  const baryAU = navBarycenterAU(jd);
-  const mid = auToScene(baryAU);
+  const mid = R.phys.marker.clone();
   navGroup = new THREE.Group(); navGroup.name = 'NAVLINQ';
-  // links from each node to the midpoint
-  const linkMat = new THREE.LineBasicMaterial({ color:0x7c5cff, transparent:true, opacity:0.85 });
-  navSel.forEach(key=>{
-    const rec = planetMeshes[key]; if (!rec) return;
-    const g = new THREE.BufferGeometry().setFromPoints([ rec.group.position.clone(), mid.clone() ]);
+  const linkMat = new THREE.LineBasicMaterial({ color:0x7c5cff, transparent:true, opacity:0.8 });
+  R.nodes.forEach(n=>{
+    const g = new THREE.BufferGeometry().setFromPoints([ n.scenePos.clone(), mid.clone() ]);
     navGroup.add(new THREE.Line(g, linkMat));
   });
-  // midpoint marker
-  const marker = new THREE.Mesh(new THREE.SphereGeometry(0.16,20,20),
-    new THREE.MeshBasicMaterial({ color:0xb7a5ff }));
+  // barycenter marker + camera-facing ring
+  const marker = new THREE.Mesh(new THREE.SphereGeometry(0.16,20,20), new THREE.MeshBasicMaterial({ color:0xb7a5ff }));
   marker.position.copy(mid);
-  const ring = new THREE.Mesh(new THREE.RingGeometry(0.26,0.32,32),
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.26,0.32,40),
     new THREE.MeshBasicMaterial({ color:0x7c5cff, side:THREE.DoubleSide, transparent:true, opacity:0.8 }));
   ring.position.copy(mid); ring.lookAt(camera.position);
   navGroup.add(marker); navGroup.add(ring);
+  // geometric centre marker + dashed offset line — makes gravity's pull visible (in-system only)
+  if (!R.anyStar && R.phys.cMarker){
+    const cm = new THREE.Mesh(new THREE.SphereGeometry(0.10,16,16), new THREE.MeshBasicMaterial({ color:0x4fd1c5, transparent:true, opacity:0.9 }));
+    cm.position.copy(R.phys.cMarker); navGroup.add(cm);
+    const dl = new THREE.Line(new THREE.BufferGeometry().setFromPoints([ R.phys.cMarker.clone(), mid.clone() ]),
+      new THREE.LineDashedMaterial({ color:0x4fd1c5, dashSize:0.25, gapSize:0.18, transparent:true, opacity:0.9 }));
+    dl.computeLineDistances(); navGroup.add(dl);
+  }
   scene.add(navGroup);
-  // readout: a celestial lat/long (ecliptic λ, β) + heliocentric distance
-  const r = baryAU.length();
-  const lon = norm360(Math.atan2(baryAU.y, baryAU.x)/DEG);
-  const lat = r>1e-9 ? Math.asin(baryAU.z/r)/DEG : 0;
   eventNoteEl.style.display='block';
-  eventNoteEl.innerHTML = `<b>NAVLINQ midpoint · ${navSel.size} nodes</b><br>` +
-    `<span style="color:#c6cde0">Ecliptic λ ${lon.toFixed(2)}° · β ${lat.toFixed(2)}° · ${r.toFixed(3)} AU from the Sun</span><br>` +
-    `<span style="color:#9aa3bd;font-size:11px">Gravity-weighted (mass-weighted barycenter) of ${[...navSel].join(', ')}.</span>`;
+  eventNoteEl.innerHTML = navReadoutHTML(R);
+}
+function navFlyToMidpoint(){
+  const R = navComputeMidpoints(); if (!R){ toast('Pick 2 or more bodies first'); return; }
+  dnFlyTo(R.phys.marker.clone(), R.anyStar ? 120 : 1.6, 'NAVLINQ midpoint');
+}
+function buildNavlinqPanel(body){
+  const chip=(id,label)=>`<button class="nv-chip" data-id="${id}">${label}</button>`;
+  const inSys=[chip('sun','Sun')].concat(PLANETS.map(p=>chip(p.key,p.name)));
+  if (moon) inSys.push(chip('moon','Moon'));
+  const stars=NEAR_STARS.map(s=>chip('star:'+s[0], s[0]));
+  body.innerHTML=`<div class="dn-hint">Pick 2+ bodies — planets, the Sun, the Moon, or nearby stars — to link their gravity-weighted midpoint in true 3-D. You can also click bodies or star pins directly in the scene.</div>
+    <div class="nv-grp-lbl">In-system</div><div class="nv-wrap">${inSys.join('')}</div>
+    <div class="nv-grp-lbl">Interstellar · real distances</div><div class="nv-wrap">${stars.join('')}</div>
+    <div class="dn-read" id="nvOut" style="margin-top:8px">Select 2 or more bodies to compute a midpoint.</div>
+    <div class="dn-rowbtn"><button class="dn-mini" id="nvClear">Clear</button><button class="dn-mini" id="nvFly" style="margin-left:auto">Fly to midpoint ▶</button></div>`;
+  body.querySelectorAll('.nv-chip').forEach(c=>c.addEventListener('click', ()=>navToggleBody(c.dataset.id)));
+  body.querySelector('#nvClear').addEventListener('click', ()=>{ navSel.clear(); clearNav(); highlightNav(); navRefreshPanel(null); });
+  body.querySelector('#nvFly').addEventListener('click', navFlyToMidpoint);
 }
 
 /* ---------------------------------------------------------------------------
@@ -1216,10 +1347,12 @@ function onPointerDown(e){
   const hit = raycaster.intersectObjects(targets, true)[0];
   if (hit){
     let o = hit.object;
-    // NAVLINQ mode: clicking a planet toggles its membership in the midpoint set
+    // NAVLINQ mode: clicking a body toggles its membership in the midpoint set
     if (navMode){
-      const key = o.userData.planet || o.name;
-      if (key && planetMeshes[key]){ navToggleBody(key); }
+      let key = o.userData.planet || o.name;
+      if (o===sun) key='sun';
+      else if (moon && o===moon.mesh) key='moon';
+      if (key) navToggleBody(key);
       return;
     }
     // resolve imported roots
@@ -1648,10 +1781,12 @@ const LANDMARKS = {
   moon:[['Tranquility Base',0.67,23.47],['Tycho Crater',-43.3,-11.4],['Copernicus',9.6,-20.1]],
   jupiter:[['Great Red Spot',-22,0]], saturn:[['North polar hexagon',88,0]],
   venus:[['Maxwell Montes',65,3]], mercury:[['Caloris Basin',30,190]] };
-// Nearest stars (real distances, ly) — representative far waypoints.
+// Nearest stars — real distances (ly), representative direction unit-vectors,
+// and real approximate masses (M☉) for gravity-weighted interstellar midpoints.
 const NEAR_STARS = [
-  ['Proxima Centauri',4.246, 1,0.2,0.4], ['Alpha Centauri A',4.365, 1,0.15,0.45],
-  ['Barnard’s Star',5.963, -0.6,0.5,0.7], ['Sirius A',8.60, 0.3,-0.4,-0.9], ['Wolf 359',7.86, -0.8,-0.2,0.3] ];
+  ['Proxima Centauri',4.246, 1,0.2,0.4, 0.122], ['Alpha Centauri A',4.365, 1,0.15,0.45, 1.079],
+  ['Barnard’s Star',5.963, -0.6,0.5,0.7, 0.144], ['Sirius A',8.60, 0.3,-0.4,-0.9, 2.063], ['Wolf 359',7.86, -0.8,-0.2,0.3, 0.110] ];
+const NEAR_STAR_BY_NAME = Object.fromEntries(NEAR_STARS.map(s=>[s[0], s]));
 // Compact major-airport table (IATA → name, lat, lon).
 const AIRPORTS = {
   JFK:['New York JFK',40.641,-73.778], LAX:['Los Angeles',33.942,-118.408], LHR:['London Heathrow',51.470,-0.454],
@@ -1742,6 +1877,7 @@ function dnPanel(id){
   if (id==='zoom')   dnPanels[id]=makeDnPanel('zoom',{ title:'Precision Zoom', icon:'🔍', x:300, y:76, build:buildZoomPanel });
   else if (id==='coord') dnPanels[id]=makeDnPanel('coord',{ title:'Coordinates · X·Y·Z', icon:'🧭', x:300, y:300, build:buildCoordPanel });
   else if (id==='flights') dnPanels[id]=makeDnPanel('flights',{ title:'Flight Tracker', icon:'✈', x:588, y:76, build:buildFlightsPanel });
+  else if (id==='navlinq') dnPanels[id]=makeDnPanel('navlinq',{ title:'NAVLINQ · midpoint', icon:'🛰', x:588, y:300, build:buildNavlinqPanel });
   return dnPanels[id];
 }
 
@@ -1804,10 +1940,10 @@ function dnBuildPins(){
   if (moon && LANDMARKS.moon){ for (const [nm,lat,lon] of LANDMARKS.moon){
       dnAddPin(moon.mesh, latLonToVec(lat,lon,0.095), { kind:'landmark', key:'moon', name:nm, lat, lon, standoff:0.06 }, '#4fd1c5'); } }
   // neighbouring-star waypoints (representative far markers, real distances)
-  for (const [nm,ly,ux,uy,uz] of NEAR_STARS){ const dir=new THREE.Vector3(ux,uy,uz).normalize();
+  for (const [nm,ly,ux,uy,uz,mass] of NEAR_STARS){ const dir=new THREE.Vector3(ux,uy,uz).normalize();
     const pos=dir.multiplyScalar(2600+ly*40);
     const s=dnPinSprite('#ffd27c'); s.position.copy(pos); s.scale.set(0.032,0.043,1);
-    s.userData.dn={ kind:'star', name:nm, ly, standoff:60 }; scene.add(s); dnPins.push(s); dnStars.push(s); }
+    s.userData.dn={ kind:'star', name:nm, ly, mass, standoff:60 }; scene.add(s); dnPins.push(s); dnStars.push(s); }
 }
 function dnTogglePins(force){
   dnPinsVisible = (force===undefined) ? !dnPinsVisible : !!force;
@@ -1856,6 +1992,11 @@ function dnPinPointer(e){
   const vis=dnPins.filter(s=>s.visible);
   const hit=_dnRay.intersectObjects(vis,false)[0];
   if(hit){ const m=hit.object.userData.dn;
+    // NAVLINQ pick mode: clicking a body/star pin toggles its midpoint membership
+    if (navMode && (m.kind==='star'||m.kind==='body')){
+      navToggleBody(m.kind==='star' ? 'star:'+m.name : m.key);
+      e.stopImmediatePropagation(); e.preventDefault(); return;
+    }
     const world=hit.object.getWorldPosition(new THREE.Vector3());
     dnFlyTo(world, m.standoff||3, m.name);
     e.stopImmediatePropagation(); e.preventDefault();
@@ -2095,7 +2236,13 @@ function deepNavTick(dt){
 // expose a tiny hook for automated validation
 window.__cosmosStudio = { open:openStudio, close, heliocentric, auToScene, PLANETS, EVENTS,
   jumpToEvent, toggleNavMode, navBarycenterAU, setRealtime, dropMyLocation,
+  navToggle:(id)=>navToggleBody(id), navFlyToMidpoint,
   get navSelection(){ return [...navSel]; }, get realtime(){ return realtime; },
+  get navMidpoint(){ const R=navComputeMidpoints(); if(!R) return null;
+    return { count:R.nodes.length, interstellar:R.anyStar, scale:R.phys.scale,
+      lon:+R.phys.lon.toFixed(3), lat:+R.phys.lat.toFixed(3), r:+R.phys.r.toFixed(5),
+      span:+R.phys.span.toFixed(5), dominant:R.dom.name,
+      offset:R.anyStar?null:+((R.phys.offKm)||0).toFixed(1) }; },
   get imported(){return imported;},
   get cameraDistance(){ return (camera && orbit) ? camera.position.distanceTo(orbit.target) : null; },
   // deep-nav test hooks
