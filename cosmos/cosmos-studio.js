@@ -222,6 +222,11 @@ let idSeq = 1;
 let navMode = false;
 const navSel = new Set();                     // planet keys
 let navGroup = null;                          // THREE.Group: links + midpoint marker
+let navMidMarker = null;                      // invisible pick proxy at the midpoint → click to focus/fly there
+// Slide / truck camera mode: dragging (or a one-finger/trackpad gesture) moves
+// the focal point (orbit.target) freely to a new X·Y·Z in space, decoupled from
+// the currently-focused body — press G to toggle (tap the ✥ Slide button too).
+let panMode = false;
 // Real-time tracking (Task 3)
 let realtime = false;
 let cineLastInput = 0;                         // ms — recent user camera input pauses auto-direction
@@ -397,6 +402,7 @@ function buildDOM(){
       <button class="st-btn ghost" id="stAdd" title="Add a primitive">＋ <span class="lbl">Add</span></button>
       <button class="st-btn ghost" id="stImport" title="Import a model, image, video, or audio">⬆ <span class="lbl">Import</span></button>
       <button class="st-btn ghost" id="stNav" title="NAVLINQ — pick 2+ bodies to compute their gravity-weighted midpoint" aria-pressed="false">◎ <span class="lbl">NAVLINQ</span></button>
+      <button class="st-btn ghost" id="stPan" title="Slide / truck (G) — drag or use a one-finger / trackpad gesture to glide the focal point to a new X·Y·Z, independent of the focused body" aria-pressed="false">✥ <span class="lbl">Slide</span></button>
       <button class="st-btn ghost" id="stLoc" title="Drop a pin at your real-world location on Earth">📍 <span class="lbl">Location</span></button>
       <button class="st-btn ghost on" id="dnPins" title="Toggle waypoint thumbtacks" aria-pressed="true">📌 <span class="lbl">Pins</span></button>
       <button class="st-btn ghost" id="dnZoom" title="Precision zoom — type a distance, %, or scale">🔍 <span class="lbl">Zoom</span></button>
@@ -492,6 +498,7 @@ function buildDOM(){
   root.querySelector('#stImport').addEventListener('click', ()=>root.querySelector('#stFile').click());
   root.querySelector('#stFile').addEventListener('change', e=>{ handleFiles(e.target.files); e.target.value=''; });
   root.querySelector('#stNav').addEventListener('click', toggleNavMode);
+  root.querySelector('#stPan').addEventListener('click', ()=>setPanMode(!panMode));
   root.querySelector('#stLoc').addEventListener('click', dropMyLocation);
   root.querySelector('#dnPins').addEventListener('click', ()=>dnTogglePins());
   root.querySelector('#dnZoom').addEventListener('click', ()=>dnPanel('zoom').toggle());
@@ -1498,6 +1505,7 @@ function navBarycenterAU(jd){
 }
 function clearNav(){
   if (navGroup){ scene.remove(navGroup); navGroup.traverse(o=>{ o.geometry&&o.geometry.dispose(); o.material&&o.material.dispose&&o.material.dispose(); }); navGroup=null; }
+  navMidMarker = null;
 }
 function updateNav(){
   clearNav();
@@ -1522,6 +1530,12 @@ function updateNav(){
     new THREE.MeshBasicMaterial({ color:0x7c5cff, side:THREE.DoubleSide, transparent:true, opacity:0.8 }));
   ring.position.copy(mid); ring.lookAt(camera.position);
   navGroup.add(marker); navGroup.add(ring);
+  // Invisible, generously-sized pick proxy so the midpoint itself is selectable:
+  // clicking it focuses/flies the camera there (orbit then pivots about the midpoint).
+  const pr = Math.max(0.5, mid.length()*0.02);
+  const pick = new THREE.Mesh(new THREE.SphereGeometry(pr,12,12), new THREE.MeshBasicMaterial({ visible:false }));
+  pick.position.copy(mid); pick.userData.navMidpoint = true;
+  navGroup.add(pick); navMidMarker = pick;
   // geometric centre marker + dashed offset line — makes gravity's pull visible (in-system only)
   if (!R.anyStar && R.phys.cMarker){
     const cm = new THREE.Mesh(new THREE.SphereGeometry(0.10,16,16), new THREE.MeshBasicMaterial({ color:0x4fd1c5, transparent:true, opacity:0.9 }));
@@ -1611,6 +1625,26 @@ function setCamMode(m){
   cineUpdateDock();
 }
 
+/* Slide / truck mode — remaps the primary drag (and one-finger touch) from
+   orbit to screen-space pan, so the user can glide the focal point (orbit.target)
+   to any new X·Y·Z, decoupled from the currently-focused body. Zoom (wheel /
+   pinch) and the secondary drag are unchanged, so nothing is lost when it's off.
+   Toggled by the G key or the ✥ Slide button (tap / trackpad friendly). */
+function setPanMode(on){
+  panMode = !!on;
+  if (orbit){
+    orbit.screenSpacePanning = true;                 // pan in the view plane → free X·Y·Z glide
+    orbit.mouseButtons.LEFT = panMode ? THREE.MOUSE.PAN   : THREE.MOUSE.ROTATE;
+    orbit.touches.ONE       = panMode ? THREE.TOUCH.PAN   : THREE.TOUCH.ROTATE;
+  }
+  const btn = root && root.querySelector('#stPan');
+  if (btn){ btn.classList.toggle('on', panMode); btn.setAttribute('aria-pressed', String(panMode)); }
+  if (renderer) renderer.domElement.style.cursor = panMode ? 'move' : '';
+  toast(panMode
+    ? 'Slide mode on — drag or one-finger / trackpad to move the focal point (X·Y·Z); wheel / pinch still zooms'
+    : 'Slide mode off — drag orbits the focused body again');
+}
+
 function focusKey(key){
   const rec = planetMeshes[key]; if (!rec) return;
   const p = PLANETS.find(x=>x.key===key);
@@ -1634,6 +1668,11 @@ function onPointerDown(e){
   pointer.x = ((e.clientX - r.left)/r.width)*2 - 1;
   pointer.y = -((e.clientY - r.top)/r.height)*2 + 1;
   raycaster.setFromCamera(pointer, camera);
+  // The NAVLINQ midpoint marker is selectable — clicking it focuses/flies there.
+  if (navMidMarker){
+    const midHit = raycaster.intersectObject(navMidMarker, false)[0];
+    if (midHit){ navFlyToMidpoint(); return; }
+  }
   const targets = [];
   for (const k in planetMeshes) targets.push(planetMeshes[k].mesh);
   if (moon) targets.push(moon.mesh);
@@ -1944,6 +1983,7 @@ function onKey(e){
   else if (k==='delete'||k==='backspace'){ if (selected?.type==='imported') removeImported(selected.im); }
   else if (k===' '){ playing=!playing; playBtn.textContent=playing?'⏸':'▶'; e.preventDefault(); }
   else if (k==='c'){ setCamMode(camMode==='cinematic'?'explore':'cinematic'); }
+  else if (k==='g'){ setPanMode(!panMode); }
 }
 
 window.addEventListener('gamepadconnected', e=>{ gamepadIndex = e.gamepad.index; toast('Controller connected'); });
@@ -2677,6 +2717,7 @@ function deepNavTick(dt){
 window.__cosmosStudio = { open:openStudio, close, heliocentric, auToScene, PLANETS, EVENTS,
   jumpToEvent, toggleNavMode, navBarycenterAU, setRealtime, dropMyLocation,
   navToggle:(id)=>navToggleBody(id), navFlyToMidpoint,
+  setPanMode:(on)=>setPanMode(on), get panMode(){ return panMode; },
   get navSelection(){ return [...navSel]; }, get realtime(){ return realtime; },
   get navMidpoint(){ const R=navComputeMidpoints(); if(!R) return null;
     return { count:R.nodes.length, interstellar:R.anyStar, scale:R.phys.scale,
