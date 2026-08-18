@@ -868,14 +868,20 @@ function animate(){
   try {
     const dt = Math.min(0.05, clock.getDelta());
 
+    // Plane-POV calm: while flying first-person aboard the airliner, ease the
+    // whole world's apparent motion down so it feels like real cruising flight
+    // (the passenger's own frame), then ease it back once the flight ends.
+    const _povFly = !!(dnFlightSim && dnFlightSim.povOn);
+    dnWorldSlow += ((_povFly ? 0.10 : 1) - dnWorldSlow) * Math.min(1, dt*2.4);
+
     if (playing){
-      simDate = new Date(simDate.getTime() + timeScale*dt*DAY_MS);
+      simDate = new Date(simDate.getTime() + timeScale*dt*DAY_MS*dnWorldSlow);
       updatePlanets();
     }
-    // planet spin (visual, exaggerated)
+    // planet spin (visual, exaggerated) — scaled by the POV calm factor
     for (const p of PLANETS){
       const rec = planetMeshes[p.key];
-      rec.spin.rotation.y += (p.rot!==0 ? (1/p.rot) : 0) * dt * 0.6;
+      rec.spin.rotation.y += (p.rot!==0 ? (1/p.rot) : 0) * dt * 0.6 * dnWorldSlow;
     }
     if (asteroidBelt) asteroidBelt.rotation.y += dt*0.02;
     if (meteorSys) updateMeteors(dt);
@@ -1787,19 +1793,69 @@ const NEAR_STARS = [
   ['Proxima Centauri',4.246, 1,0.2,0.4, 0.122], ['Alpha Centauri A',4.365, 1,0.15,0.45, 1.079],
   ['Barnard’s Star',5.963, -0.6,0.5,0.7, 0.144], ['Sirius A',8.60, 0.3,-0.4,-0.9, 2.063], ['Wolf 359',7.86, -0.8,-0.2,0.3, 0.110] ];
 const NEAR_STAR_BY_NAME = Object.fromEntries(NEAR_STARS.map(s=>[s[0], s]));
-// Compact major-airport table (IATA → name, lat, lon).
+// Major-airport table (IATA → name, lat, lon). Broad global coverage so common
+// city-pairs (e.g. ATL→DAL) resolve; reference points ≈ terminal/ARP.
 const AIRPORTS = {
-  JFK:['New York JFK',40.641,-73.778], LAX:['Los Angeles',33.942,-118.408], LHR:['London Heathrow',51.470,-0.454],
-  CDG:['Paris CDG',49.010,2.548], DXB:['Dubai',25.253,55.365], HND:['Tokyo Haneda',35.552,139.780],
-  SIN:['Singapore Changi',1.364,103.991], SYD:['Sydney',-33.939,151.175], GRU:['São Paulo',-23.432,-46.470],
-  JNB:['Johannesburg',-26.139,28.246], FRA:['Frankfurt',50.037,8.562], HKG:['Hong Kong',22.308,113.918],
-  ORD:['Chicago O’Hare',41.978,-87.905], SFO:['San Francisco',37.621,-122.379], DEL:['Delhi',28.556,77.100],
-  PEK:['Beijing Capital',40.080,116.585], AMS:['Amsterdam',52.309,4.764], MEX:['Mexico City',19.436,-99.072],
-  YYZ:['Toronto',43.678,-79.624], DFW:['Dallas/Fort Worth',32.897,-97.038], ATL:['Atlanta',33.640,-84.427],
-  LOS:['Lagos',6.577,3.321], NBO:['Nairobi',-1.319,36.928], MAD:['Madrid',40.472,-3.561], IST:['Istanbul',41.262,28.742] };
+  // — United States —
+  ATL:['Atlanta',33.6407,-84.4277], DFW:['Dallas/Fort Worth',32.8998,-97.0403], DAL:['Dallas Love Field',32.8471,-96.8518],
+  DEN:['Denver',39.8561,-104.6737], ORD:['Chicago O’Hare',41.9742,-87.9073], MDW:['Chicago Midway',41.7868,-87.7522],
+  LAX:['Los Angeles',33.9416,-118.4085], JFK:['New York JFK',40.6413,-73.7781], EWR:['Newark',40.6895,-74.1745],
+  LGA:['New York LaGuardia',40.7769,-73.8740], SFO:['San Francisco',37.6213,-122.3790], SJC:['San José CA',37.3639,-121.9289],
+  OAK:['Oakland',37.7126,-122.2197], SEA:['Seattle–Tacoma',47.4502,-122.3088], PDX:['Portland OR',45.5898,-122.5951],
+  LAS:['Las Vegas',36.0840,-115.1537], PHX:['Phoenix',33.4342,-112.0116], SAN:['San Diego',32.7338,-117.1933],
+  SLC:['Salt Lake City',40.7899,-111.9791], DTW:['Detroit',42.2162,-83.3554], MSP:['Minneapolis–St. Paul',44.8848,-93.2223],
+  BOS:['Boston Logan',42.3656,-71.0096], PHL:['Philadelphia',39.8744,-75.2424], BWI:['Baltimore',39.1774,-76.6684],
+  IAD:['Washington Dulles',38.9531,-77.4565], DCA:['Washington Reagan',38.8512,-77.0402], CLT:['Charlotte',35.2140,-80.9431],
+  MIA:['Miami',25.7959,-80.2870], FLL:['Fort Lauderdale',26.0742,-80.1506], MCO:['Orlando',28.4312,-81.3081],
+  TPA:['Tampa',27.9755,-82.5332], IAH:['Houston Bush',29.9902,-95.3368], HOU:['Houston Hobby',29.6454,-95.2789],
+  AUS:['Austin',30.1975,-97.6664], SAT:['San Antonio',29.5337,-98.4698], MSY:['New Orleans',29.9934,-90.2580],
+  BNA:['Nashville',36.1263,-86.6774], STL:['St. Louis',38.7487,-90.3700], MCI:['Kansas City',39.2976,-94.7139],
+  IND:['Indianapolis',39.7173,-86.2944], CMH:['Columbus OH',39.9980,-82.8919], CLE:['Cleveland',41.4117,-81.8498],
+  PIT:['Pittsburgh',40.4915,-80.2329], CVG:['Cincinnati',39.0489,-84.6678], MEM:['Memphis',35.0424,-89.9767],
+  RDU:['Raleigh–Durham',35.8801,-78.7880], SMF:['Sacramento',38.6951,-121.5908], ABQ:['Albuquerque',35.0402,-106.6092],
+  HNL:['Honolulu',21.3187,-157.9224], ANC:['Anchorage',61.1743,-149.9982],
+  // — Canada & Mexico —
+  YYZ:['Toronto Pearson',43.6777,-79.6248], YVR:['Vancouver',49.1967,-123.1815], YUL:['Montréal',45.4706,-73.7408],
+  YYC:['Calgary',51.1139,-114.0203], YEG:['Edmonton',53.3097,-113.5798], YOW:['Ottawa',45.3225,-75.6692],
+  MEX:['Mexico City',19.4363,-99.0721], CUN:['Cancún',21.0365,-86.8771], GDL:['Guadalajara',20.5218,-103.3111],
+  // — Central & South America —
+  GRU:['São Paulo Guarulhos',-23.4356,-46.4731], GIG:['Rio de Janeiro',-22.8090,-43.2506], EZE:['Buenos Aires Ezeiza',-34.8222,-58.5358],
+  SCL:['Santiago',-33.3898,-70.7944], BOG:['Bogotá',4.7016,-74.1469], LIM:['Lima',-12.0219,-77.1143],
+  PTY:['Panama City',9.0714,-79.3835], UIO:['Quito',-0.1292,-78.3575],
+  // — Europe —
+  LHR:['London Heathrow',51.4700,-0.4543], LGW:['London Gatwick',51.1537,-0.1821], MAN:['Manchester',53.3537,-2.2750],
+  DUB:['Dublin',53.4213,-6.2701], CDG:['Paris CDG',49.0097,2.5479], ORY:['Paris Orly',48.7233,2.3794],
+  AMS:['Amsterdam Schiphol',52.3105,4.7683], BRU:['Brussels',50.9014,4.4844], FRA:['Frankfurt',50.0379,8.5622],
+  MUC:['Munich',48.3538,11.7861], ZRH:['Zürich',47.4647,8.5492], VIE:['Vienna',48.1103,16.5697],
+  MAD:['Madrid Barajas',40.4936,-3.5668], BCN:['Barcelona',41.2974,2.0833], LIS:['Lisbon',38.7742,-9.1342],
+  FCO:['Rome Fiumicino',41.8003,12.2389], MXP:['Milan Malpensa',45.6301,8.7255], ATH:['Athens',37.9364,23.9445],
+  CPH:['Copenhagen',55.6180,12.6508], ARN:['Stockholm Arlanda',59.6519,17.9186], OSL:['Oslo',60.1976,11.1004],
+  HEL:['Helsinki',60.3172,24.9633], WAW:['Warsaw',52.1657,20.9671], PRG:['Prague',50.1008,14.2600],
+  BUD:['Budapest',47.4369,19.2556], IST:['Istanbul',41.2753,28.7519], SAW:['Istanbul Sabiha',40.8986,29.3092],
+  SVO:['Moscow Sheremetyevo',55.9726,37.4146], DME:['Moscow Domodedovo',55.4088,37.9063],
+  // — Middle East & Africa —
+  DXB:['Dubai',25.2532,55.3657], AUH:['Abu Dhabi',24.4330,54.6511], DOH:['Doha Hamad',25.2731,51.6081],
+  RUH:['Riyadh',24.9576,46.6988], JED:['Jeddah',21.6796,39.1565], KWI:['Kuwait',29.2266,47.9689],
+  BAH:['Bahrain',26.2708,50.6336], TLV:['Tel Aviv',32.0114,34.8867], CAI:['Cairo',30.1219,31.4056],
+  JNB:['Johannesburg',-26.1392,28.2460], CPT:['Cape Town',-33.9690,18.6017], LOS:['Lagos',6.5774,3.3212],
+  NBO:['Nairobi',-1.3192,36.9278], ADD:['Addis Ababa',8.9779,38.7993], CMN:['Casablanca',33.3675,-7.5900],
+  ACC:['Accra',5.6052,-0.1668], DKR:['Dakar',14.6710,-17.0733],
+  // — Asia —
+  HND:['Tokyo Haneda',35.5523,139.7798], NRT:['Tokyo Narita',35.7719,140.3928], ICN:['Seoul Incheon',37.4602,126.4407],
+  PEK:['Beijing Capital',40.0799,116.6031], PKX:['Beijing Daxing',39.5098,116.4109], PVG:['Shanghai Pudong',31.1443,121.8083],
+  CAN:['Guangzhou',23.3924,113.2988], HKG:['Hong Kong',22.3080,113.9185], TPE:['Taipei Taoyuan',25.0777,121.2328],
+  SIN:['Singapore Changi',1.3644,103.9915], BKK:['Bangkok Suvarnabhumi',13.6900,100.7501], KUL:['Kuala Lumpur',2.7456,101.7099],
+  CGK:['Jakarta',-6.1256,106.6559], MNL:['Manila',14.5086,121.0197], DEL:['Delhi',28.5562,77.1000],
+  BOM:['Mumbai',19.0896,72.8656], BLR:['Bengaluru',13.1986,77.7066], MAA:['Chennai',12.9941,80.1709],
+  HYD:['Hyderabad',17.2403,78.4294], CCU:['Kolkata',22.6547,88.4467], DAC:['Dhaka',23.8433,90.3978],
+  KHI:['Karachi',24.9065,67.1608], ISB:['Islamabad',33.5490,72.8258], CMB:['Colombo',7.1808,79.8841],
+  KTM:['Kathmandu',27.6966,85.3591],
+  // — Oceania —
+  SYD:['Sydney',-33.9399,151.1753], MEL:['Melbourne',-37.6690,144.8410], BNE:['Brisbane',-27.3842,153.1175],
+  PER:['Perth',-31.9403,115.9669], AKL:['Auckland',-37.0082,174.7850], NAN:['Nadi',-17.7554,177.4434] };
 
 let dnInited=false, dnPins=[], dnStars=[], dnPinsVisible=true, dnFlight=null, dnPlane=null, dnFlightArc=null;
-let dnHudEl=null, dnTipEl=null, dnTempoEl=null, dnTempoFrac=0.45;
+let dnHudEl=null, dnTipEl=null, dnTempoEl=null, dnTempoFrac=0.45, dnWorldSlow=1;
 const dnPanels={};
 const _dnRay=new THREE.Raycaster();
 const _dnV=new THREE.Vector3(), _dnV2=new THREE.Vector3(), _dnV3=new THREE.Vector3();
@@ -2124,11 +2180,14 @@ function dnDrawGizmo(){
 
 /* ---- Flight tracker (feature 6) — offline great-circle simulation -------- */
 function buildFlightsPanel(body){
+  const codes=Object.keys(AIRPORTS).sort();
+  const opts=codes.map(c=>`<option value="${c}">${AIRPORTS[c][0]}</option>`).join('');
   body.innerHTML=`<div class="dn-flrow">
-      <div><label>From (IATA)</label><input class="dn-in" id="dnFrom" placeholder="JFK" maxlength="3"></div>
-      <div><label>To (IATA)</label><input class="dn-in" id="dnTo" placeholder="LHR" maxlength="3"></div></div>
+      <div><label>From (IATA)</label><input class="dn-in" id="dnFrom" placeholder="ATL" maxlength="3" list="dnApList" autocomplete="off"></div>
+      <div><label>To (IATA)</label><input class="dn-in" id="dnTo" placeholder="DAL" maxlength="3" list="dnApList" autocomplete="off"></div></div>
     <label>Vias (optional, comma-sep IATA)</label>
-    <input class="dn-in" id="dnVia" placeholder="e.g. CDG, DXB" autocomplete="off">
+    <input class="dn-in" id="dnVia" placeholder="e.g. DFW, DEN" list="dnApList" autocomplete="off">
+    <datalist id="dnApList">${opts}</datalist>
     <div class="dn-flrow" style="margin-top:7px">
       <div><label>Date</label><input class="dn-in" id="dnFDate" type="date" value="2026-08-17"></div>
       <div><label>Depart</label><input class="dn-in" id="dnFTime" type="time" value="09:30"></div></div>
@@ -2136,13 +2195,51 @@ function buildFlightsPanel(body){
       <button class="dn-mini on" id="dnWx">Weather</button>
       <button class="dn-mini" id="dnPOV">Plane POV</button>
       <button class="dn-mini" id="dnFly" style="margin-left:auto">Fly ▶</button></div>
-    <div class="dn-read" id="dnFOut">Enter airport codes and press Fly. Great-circle path, day/night from the real Sun; weather is a stylised offline model.</div>`;
+    <div class="dn-read" id="dnFOut">${codes.length} airports loaded. Type or pick codes (e.g. ATL→DAL) and press Fly. Great-circle path, day/night from the real Sun; “Plane POV” rides aboard the airliner (the world slows to the passenger’s frame); weather is a stylised offline model.</div>`;
   const q=id=>body.querySelector(id);
   q('#dnWx').addEventListener('click',e=>e.currentTarget.classList.toggle('on'));
   q('#dnPOV').addEventListener('click',e=>e.currentTarget.classList.toggle('on'));
   q('#dnFly').addEventListener('click',()=>dnStartFlight(body));
 }
 function dnAirport(code){ const k=(code||'').trim().toUpperCase(); return AIRPORTS[k]?{code:k,name:AIRPORTS[k][0],lat:AIRPORTS[k][1],lon:AIRPORTS[k][2]}:null; }
+// Widebody twin-engine airliner (Boeing 777-300ER / 787-class silhouette),
+// built from primitives — nose points toward -Z so it leads along the flight
+// tangent set by holder.lookAt(). Sized relative to Earth's scene radius R.
+function dnMakeAirliner(R){
+  const g=new THREE.Group(); g.name='airliner';
+  const U=R*0.017;                                             // base unit
+  const skin =new THREE.MeshStandardMaterial({ color:0xf4f6f9, metalness:0.32, roughness:0.46 });
+  const wing =new THREE.MeshStandardMaterial({ color:0xe9edf2, metalness:0.34, roughness:0.54 });
+  const eng  =new THREE.MeshStandardMaterial({ color:0x30353f, metalness:0.55, roughness:0.4 });
+  const livery=new THREE.MeshStandardMaterial({ color:0xd21f2b, metalness:0.28, roughness:0.5 }); // tail livery
+  const glass=new THREE.MeshStandardMaterial({ color:0x14213c, metalness:0.7, roughness:0.18, emissive:0x0a1830, emissiveIntensity:0.5 });
+  // fuselage (capsule along Z)
+  const fus=new THREE.Mesh(new THREE.CapsuleGeometry(U*0.55, U*7.0, 6, 18), skin);
+  fus.rotation.x=Math.PI/2; g.add(fus);
+  // cockpit glass at the nose
+  const cock=new THREE.Mesh(new THREE.SphereGeometry(U*0.5,16,12,0,Math.PI*2,0,Math.PI*0.55), glass);
+  cock.rotation.x=-Math.PI/2; cock.position.z=-U*3.7; g.add(cock);
+  // swept main wings + underslung engines (one per side → twinjet)
+  const side=sx=>{
+    const w=new THREE.Mesh(new THREE.BoxGeometry(U*3.6,U*0.10,U*1.5), wing);
+    w.position.set(sx*U*2.1,-U*0.12,U*0.5); w.rotation.y=sx*0.40; w.rotation.z=sx*0.05; g.add(w);
+    const nac=new THREE.Mesh(new THREE.CylinderGeometry(U*0.42,U*0.42,U*1.5,16), eng);
+    nac.rotation.x=Math.PI/2; nac.position.set(sx*U*2.5,-U*0.52,U*0.05); g.add(nac);
+    const intake=new THREE.Mesh(new THREE.RingGeometry(U*0.24,U*0.42,16), new THREE.MeshBasicMaterial({ color:0x0b0d12, side:THREE.DoubleSide }));
+    intake.position.set(sx*U*2.5,-U*0.52,-U*0.70); g.add(intake);
+    const stab=new THREE.Mesh(new THREE.BoxGeometry(U*1.6,U*0.08,U*0.8), wing);
+    stab.position.set(sx*U*0.9,0,U*3.9); stab.rotation.y=sx*0.42; g.add(stab);
+  };
+  side(-1); side(1);
+  // vertical tail fin with livery
+  const fin=new THREE.Mesh(new THREE.BoxGeometry(U*0.11,U*1.5,U*1.3), livery);
+  fin.position.set(0,U*0.78,U*4.0); fin.rotation.x=-0.28; g.add(fin);
+  // cabin window strip (thin dark band along the fuselage)
+  const band=new THREE.Mesh(new THREE.BoxGeometry(U*0.02,U*0.14,U*5.4), glass);
+  band.position.set(U*0.55,U*0.05,0); g.add(band);
+  const band2=band.clone(); band2.position.x=-U*0.55; g.add(band2);
+  return g;
+}
 function dnStartFlight(body){
   const q=id=>body.querySelector(id), out=q('#dnFOut');
   const from=dnAirport(q('#dnFrom').value), to=dnAirport(q('#dnTo').value);
@@ -2168,9 +2265,8 @@ function dnStartFlight(body){
   const geo=new THREE.BufferGeometry().setFromPoints(pts);
   dnFlightArc=new THREE.Line(geo, new THREE.LineBasicMaterial({ color:0x4fd1c5, transparent:true, opacity:0.85, depthTest:false }));
   dnFlightArc.renderOrder=998; rec.group.add(dnFlightArc);
-  // little plane
-  const pl=new THREE.Mesh(new THREE.ConeGeometry(R*0.05,R*0.16,10), new THREE.MeshBasicMaterial({ color:0xffffff }));
-  pl.rotation.x=Math.PI/2; const holder=new THREE.Group(); holder.add(pl); rec.group.add(holder); dnPlane=holder;
+  // widebody airliner (twin-engine, Boeing 777-300ER-class silhouette)
+  const pl=dnMakeAirliner(R); const holder=new THREE.Group(); holder.add(pl); rec.group.add(holder); dnPlane=holder;
   // weather (deterministic offline model seeded by route+date)
   const wxOn=q('#dnWx').classList.contains('on'), povOn=q('#dnPOV').classList.contains('on');
   const seed=_hashStr(from.code+to.code+(q('#dnFDate').value||''));
@@ -2178,7 +2274,7 @@ function dnStartFlight(body){
   const wx=WX[seed%WX.length];
   dnFlight={ active:false }; // pause any camera fly-to
   const total=pts.length-1;
-  dnFlightSim={ pts, holder, i:0, total, dur:Math.max(6,total*0.02), t:0, povOn, wx:wxOn?wx:null, out, from, to,
+  dnFlightSim={ pts, holder, i:0, total, dur:(povOn?Math.max(18,total*0.055):Math.max(6,total*0.02)), t:0, povOn, wx:wxOn?wx:null, out, from, to,
     depart:(q('#dnFTime').value||'09:30'), date:(q('#dnFDate').value||'') };
   const km=dnGcKm(legs);
   out.innerHTML=`<b>${from.code}→${to.code}</b>${vias.length?' via '+vias.map(v=>v.code).join(', '):''} · ~${km.toLocaleString(undefined,{maximumFractionDigits:0})} km<br>`+
@@ -2248,4 +2344,5 @@ window.__cosmosStudio = { open:openStudio, close, heliocentric, auToScene, PLANE
   // deep-nav test hooks
   dnPanel:(id)=>dnPanel(id), dnParseZoom:(s)=>dnParseZoom(s), dnTogglePins:()=>dnTogglePins(),
   dnFlyToKey:(k)=>dnFlyToBodyKey(k), get dnFocus(){ return dnNearestBody()?.key||null; },
-  get dnPinCount(){ return dnPins.length; }, get dnFlying(){ return !!(dnFlight&&dnFlight.active); } };
+  get dnPinCount(){ return dnPins.length; }, get dnFlying(){ return !!(dnFlight&&dnFlight.active); },
+  get dnFlightActive(){ return !!dnFlightSim; }, get dnWorldSlow(){ return dnWorldSlow; }, get airportCount(){ return Object.keys(AIRPORTS).length; } };
