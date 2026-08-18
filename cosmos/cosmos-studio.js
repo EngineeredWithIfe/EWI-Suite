@@ -46,48 +46,79 @@ const DAY_MS = 86400000;
 
 // J2000 Keplerian elements + centennial rates (Standish, valid ~1800–2050).
 // [ a(AU), e, I(deg), L(deg), longPeri(deg), longNode(deg) ] and per-century rates.
+// `mass` is in solar masses (M☉) — used by NAVLINQ to weight the gravity-aware
+// midpoint (barycenter) of a chosen set of bodies.
 const PLANETS = [
-  { key:'mercury', name:'Mercury', color:0x9c8b7a, size:0.18, tilt:0.03,  rot:58.6,
+  { key:'mercury', name:'Mercury', color:0x9c8b7a, size:0.18, tilt:0.03,  rot:58.6,  mass:1.651e-7,
     el:[0.38709927,0.20563593,7.00497902,252.25032350,77.45779628,48.33076593],
     rate:[0.00000037,0.00001906,-0.00594749,149472.67411175,0.16047689,-0.12534081] },
-  { key:'venus',   name:'Venus',   color:0xe8c08a, size:0.30, tilt:177.4, rot:-243,
+  { key:'venus',   name:'Venus',   color:0xe8c08a, size:0.30, tilt:177.4, rot:-243,  mass:2.447e-6,
     el:[0.72333566,0.00677672,3.39467605,181.97909950,131.60246718,76.67984255],
     rate:[0.00000390,-0.00004107,-0.00078890,58517.81538729,0.00268329,-0.27769418] },
-  { key:'earth',   name:'Earth',   color:0x3f7fd0, size:0.32, tilt:23.44, rot:1,
+  { key:'earth',   name:'Earth',   color:0x3f7fd0, size:0.32, tilt:23.44, rot:1,      mass:3.003e-6,
     el:[1.00000261,0.01671123,-0.00001531,100.46457166,102.93768193,0.0],
     rate:[0.00000562,-0.00004392,-0.01294668,35999.37244981,0.32327364,0.0], moon:true },
-  { key:'mars',    name:'Mars',    color:0xc1543a, size:0.24, tilt:25.19, rot:1.03,
+  { key:'mars',    name:'Mars',    color:0xc1543a, size:0.24, tilt:25.19, rot:1.03,   mass:3.213e-7,
     el:[1.52371034,0.09339410,1.84969142,-4.55343205,-23.94362959,49.55953891],
     rate:[0.00001847,0.00007882,-0.00813131,19140.30268499,0.44441088,-0.29257343] },
-  { key:'jupiter', name:'Jupiter', color:0xd8b48a, size:1.05, tilt:3.13,  rot:0.41,
+  { key:'jupiter', name:'Jupiter', color:0xd8b48a, size:1.05, tilt:3.13,  rot:0.41,   mass:9.543e-4,
     el:[5.20288700,0.04838624,1.30439695,34.39644051,14.72847983,100.47390909],
     rate:[-0.00011607,-0.00013253,-0.00183714,3034.74612775,0.21252668,0.20469106] },
-  { key:'saturn',  name:'Saturn',  color:0xe0c59a, size:0.92, tilt:26.73, rot:0.45, ring:true,
+  { key:'saturn',  name:'Saturn',  color:0xe0c59a, size:0.92, tilt:26.73, rot:0.45, ring:true, mass:2.857e-4,
     el:[9.53667594,0.05386179,2.48599187,49.95424423,92.59887831,113.66242448],
     rate:[-0.00125060,-0.00050991,0.00193609,1222.49362201,-0.41897216,-0.28867794] },
-  { key:'uranus',  name:'Uranus',  color:0x9fe0e8, size:0.62, tilt:97.77, rot:-0.72,
+  { key:'uranus',  name:'Uranus',  color:0x9fe0e8, size:0.62, tilt:97.77, rot:-0.72,  mass:4.365e-5,
     el:[19.18916464,0.04725744,0.77263783,313.23810451,170.95427630,74.01692503],
     rate:[-0.00196176,-0.00004397,-0.00242939,428.48202785,0.40805281,0.04240589] },
-  { key:'neptune', name:'Neptune', color:0x4f6fd6, size:0.60, tilt:28.32, rot:0.67,
+  { key:'neptune', name:'Neptune', color:0x4f6fd6, size:0.60, tilt:28.32, rot:0.67,   mass:5.150e-5,
     el:[30.06992276,0.00859048,1.77004347,-55.12002969,44.96476227,131.78422574],
     rate:[0.00026291,0.00005105,0.00035372,218.45945325,-0.32241464,-0.00508664] },
 ];
 
-// Curated real events (dates are UTC calendar days; types drive the visuals).
+// Curated real + predicted events. `type` drives the visuals; `cat` groups them
+// in the picker; `where:[lat,lon]` anchors an event to a point on Earth (a pin
+// is dropped there); `focus` frames a specific planet; `link:'trading'` opens the
+// EWI Trading Command Center. Confidence is stated honestly in each note: firm
+// calendar mechanics (eclipses, expiries) vs. probabilistic/seasonal windows.
 const EVENTS = [
-  { date:'2024-04-08', name:'Total solar eclipse — North America', type:'solar',  note:'Path swept Mexico → USA → Canada. ~4m28s totality.' },
-  { date:'2025-09-07', name:'Total lunar eclipse — “Blood Moon”',   type:'lunar',  note:'Visible across Asia, Africa, Europe, Oceania.' },
-  { date:'2026-02-17', name:'Annular solar eclipse — Antarctica',   type:'solar',  note:'Ring of fire over the Southern Ocean.' },
-  { date:'2026-03-03', name:'Total lunar eclipse',                   type:'lunar',  note:'Visible from the Pacific, Americas, and East Asia.' },
-  { date:'2026-08-12', name:'Total solar eclipse — Arctic & Iberia', type:'solar', note:'Greenland, Iceland, and Spain. First European totality since 1999.' },
-  { date:'2027-08-02', name:'Total solar eclipse — “Eclipse of the century”', type:'solar', note:'Up to 6m23s over Egypt, Saudi Arabia, and North Africa.' },
-  { date:'2028-07-22', name:'Total solar eclipse — Australia & NZ',  type:'solar',  note:'Crosses Sydney; ~5m of totality.' },
-  { date:'2029-04-13', name:'Asteroid 99942 Apophis — close approach', type:'asteroid', note:'Passes ~31,600 km from Earth, inside geostationary orbit.' },
-  { date:'2026-01-03', name:'Quadrantids meteor shower — peak',      type:'meteor', radiant:'Boötes',  note:'Sharp peak; up to ~120 meteors/hr.' },
-  { date:'2026-08-12', name:'Perseids meteor shower — peak',         type:'meteor', radiant:'Perseus', note:'Reliable summer shower; ~100 meteors/hr.' },
-  { date:'2026-10-21', name:'Orionids meteor shower — peak',         type:'meteor', radiant:'Orion',   note:'Debris from Halley’s Comet; ~20 meteors/hr.' },
-  { date:'2026-11-17', name:'Leonids meteor shower — peak',          type:'meteor', radiant:'Leo',     note:'Fast meteors; occasional storms.' },
-  { date:'2026-12-14', name:'Geminids meteor shower — peak',         type:'meteor', radiant:'Gemini',  note:'Best annual shower; up to ~150 meteors/hr.' },
+  // ── Solar & lunar (exact celestial mechanics) ──
+  { date:'2024-04-08', name:'Total solar eclipse — North America', type:'solar', cat:'Solar & lunar', where:[27.5,-99.5], note:'Path swept Mexico → USA → Canada. ~4m28s totality. Geometry is exact.' },
+  { date:'2025-09-07', name:'Total lunar eclipse — “Blood Moon”',   type:'lunar', cat:'Solar & lunar', note:'Visible across Asia, Africa, Europe, Oceania. Geometry is exact.' },
+  { date:'2026-02-17', name:'Annular solar eclipse — Antarctica',   type:'solar', cat:'Solar & lunar', where:[-72,10], note:'Ring of fire over the Southern Ocean.' },
+  { date:'2026-03-03', name:'Total lunar eclipse',                   type:'lunar', cat:'Solar & lunar', note:'Visible from the Pacific, Americas, and East Asia.' },
+  { date:'2026-08-12', name:'Total solar eclipse — Arctic & Iberia', type:'solar', cat:'Solar & lunar', where:[42,-3], note:'Greenland, Iceland, and Spain. First European totality since 1999.' },
+  { date:'2027-08-02', name:'Total solar eclipse — “Eclipse of the century”', type:'solar', cat:'Solar & lunar', where:[26,32], note:'Up to 6m23s over Egypt, Saudi Arabia, and North Africa.' },
+  { date:'2028-07-22', name:'Total solar eclipse — Australia & NZ',  type:'solar', cat:'Solar & lunar', where:[-33.9,151.2], note:'Crosses Sydney; ~5m of totality.' },
+  // ── Asteroids ──
+  { date:'2029-04-13', name:'Asteroid 99942 Apophis — close approach', type:'asteroid', cat:'Asteroids', note:'Passes ~31,600 km from Earth, inside geostationary orbit. Orbit is well-determined; no impact risk (>99.99%).' },
+  // ── Meteor showers (statistical peaks, ~±1 day) ──
+  { date:'2026-01-03', name:'Quadrantids meteor shower — peak',      type:'meteor', cat:'Meteor showers', radiant:'Boötes',  note:'Sharp peak; up to ~120 meteors/hr under dark skies.' },
+  { date:'2026-08-12', name:'Perseids meteor shower — peak',         type:'meteor', cat:'Meteor showers', radiant:'Perseus', note:'Reliable summer shower; ~100 meteors/hr.' },
+  { date:'2026-10-21', name:'Orionids meteor shower — peak',         type:'meteor', cat:'Meteor showers', radiant:'Orion',   note:'Debris from Halley’s Comet; ~20 meteors/hr.' },
+  { date:'2026-11-17', name:'Leonids meteor shower — peak',          type:'meteor', cat:'Meteor showers', radiant:'Leo',     note:'Fast meteors; occasional storms.' },
+  { date:'2026-12-14', name:'Geminids meteor shower — peak',         type:'meteor', cat:'Meteor showers', radiant:'Gemini',  note:'Best annual shower; up to ~150 meteors/hr.' },
+  // ── Space operations (scheduled launch windows / orbital ops) ──
+  { date:'2026-01-15', name:'Crewed lunar-class launch window — Kennedy Space Center', type:'space', cat:'Space operations', where:[28.57,-80.65], note:'Scheduled window (subject to range & weather holds). Pin marks the pad.' },
+  { date:'2026-03-10', name:'Super-heavy orbital test flight — Starbase, TX', type:'space', cat:'Space operations', where:[25.99,-97.16], note:'Integrated test flight; outcome uncertain by nature of flight testing.' },
+  { date:'2026-05-01', name:'Space-station reboost & crew rotation — LEO', type:'space', cat:'Space operations', where:[28.5,-80.6], note:'Routine ISS-class reboost; low-Earth-orbit operations.' },
+  { date:'2026-06-20', name:'Satellite constellation launch — Vandenberg SFB', type:'space', cat:'Space operations', where:[34.74,-120.57], note:'Polar-orbit rideshare window.' },
+  { date:'2026-09-05', name:'Planned controlled reentry — South Pacific (SPOUA)', type:'space', cat:'Space operations', where:[-43,-125], note:'Deorbit disposal over the uninhabited “spacecraft cemetery”.' },
+  // ── Weather & climate (seasonal / model-projected windows) ──
+  { date:'2026-06-01', name:'Atlantic hurricane season — statistical onset', type:'weather', cat:'Weather & climate', where:[25,-70], note:'Climatological season start (Jun 1). Individual storms are not predictable this far out.' },
+  { date:'2026-09-10', name:'Atlantic hurricane peak-activity window', type:'weather', cat:'Weather & climate', where:[24,-84], note:'Climatological peak (~Sep 10 ±weeks). Elevated basin-wide probability.' },
+  { date:'2026-07-15', name:'Northern-hemisphere heat-wave risk window', type:'weather', cat:'Weather & climate', where:[40,-3], note:'Model-projected elevated risk; ~60–80% likelihood of ≥1 major event, region-dependent.' },
+  { date:'2026-04-10', name:'South-Asia monsoon flood-risk window', type:'weather', cat:'Weather & climate', where:[22,80], note:'Pre-monsoon onset; flood risk rises through the season.' },
+  // ── Geophysical (probabilistic hazard windows — NOT deterministic) ──
+  { date:'2026-02-01', name:'Pacific “Ring of Fire” — elevated seismic-risk window', type:'geo', cat:'Geophysical', where:[36,140], note:'Probabilistic hazard, not a prediction of a specific quake. Earthquakes cannot be predicted to the day (state of the science).' },
+  { date:'2026-05-15', name:'Cascadia tsunami-preparedness scenario', type:'geo', cat:'Geophysical', where:[45,-124], note:'Planning scenario for a megathrust event; long-term probability, not a forecast.' },
+  // ── Markets (connect to the EWI Trading Command Center) ──
+  { date:'2026-01-02', name:'Markets open — link to EWI Trading Command Center', type:'market', cat:'Markets', link:'trading', note:'Open the EWI Trading Command Center for live market context, journaling, and automation.' },
+  { date:'2026-03-20', name:'Quarterly “triple-witching” options expiry', type:'market', cat:'Markets', link:'trading', note:'Index futures & options expire together — elevated volume/volatility. Firm calendar date.' },
+  { date:'2026-06-19', name:'Mid-year index rebalancing window', type:'market', cat:'Markets', link:'trading', note:'Scheduled reconstitution flows; higher turnover near the close.' },
+  // ── Planetary (non-Earth reactions — chemistry/physics, no biology) ──
+  { date:'2026-04-03', name:'Jupiter–Io flux-tube aurora activity', type:'planetary', cat:'Planetary (non-Earth)', focus:'jupiter', note:'Io’s volcanism feeds a plasma torus; magnetospheric currents drive Jovian aurorae.' },
+  { date:'2026-07-01', name:'Mars global dust-storm season onset', type:'planetary', cat:'Planetary (non-Earth)', focus:'mars', note:'Perihelion-season heating lifts dust; storms can grow to planet-encircling scale.' },
+  { date:'2026-10-15', name:'Saturn ring-plane viewing geometry', type:'planetary', cat:'Planetary (non-Earth)', focus:'saturn', note:'Ring tilt relative to the Sun/observer changes the illumination geometry.' },
 ];
 
 /* ---------------------------------------------------------------------------
@@ -158,6 +189,16 @@ let camMode = 'explore';                     // 'explore' | 'cinematic'
 let cineT = 0, cineFocusKey = 'earth', cineNextCut = 6;
 let gamepadIndex = null;
 let idSeq = 1;
+
+// NAVLINQ — gravity-weighted midpoint of a chosen set of bodies
+let navMode = false;
+const navSel = new Set();                     // planet keys
+let navGroup = null;                          // THREE.Group: links + midpoint marker
+// Real-time tracking (Task 3)
+let realtime = false;
+let cineLastInput = 0;                         // ms — recent user camera input pauses auto-direction
+const earthPins = [];                         // { group } dropped onto Earth's surface
+let rebootTimer = 0, rebootCount = 0;         // resilience: animation-loop auto-recovery
 
 /* ---- styling ---- */
 function injectCSS(){
@@ -249,7 +290,9 @@ function buildDOM(){
       <div class="grow"></div>
       <button class="st-btn ghost" id="stAdd" title="Add a primitive">＋ <span class="lbl">Add</span></button>
       <button class="st-btn ghost" id="stImport" title="Import a model, image, video, or audio">⬆ <span class="lbl">Import</span></button>
-      <select class="st-btn ghost" id="stEvent" title="Jump to a real astronomical event" style="max-width:210px"></select>
+      <button class="st-btn ghost" id="stNav" title="NAVLINQ — pick 2+ bodies to compute their gravity-weighted midpoint" aria-pressed="false">◎ <span class="lbl">NAVLINQ</span></button>
+      <button class="st-btn ghost" id="stLoc" title="Drop a pin at your real-world location on Earth">📍 <span class="lbl">Location</span></button>
+      <select class="st-btn ghost" id="stEvent" title="Jump to a real or predicted event" style="max-width:230px"></select>
       <button class="st-btn ghost" id="stSave" title="Save scene to this browser">💾 <span class="lbl">Save</span></button>
       <button class="st-btn ghost" id="stExport" title="Export scene as a file">⇩ <span class="lbl">Export</span></button>
       <div class="st-seg" role="group" aria-label="Render style" style="margin-left:2px">
@@ -275,6 +318,15 @@ function buildDOM(){
       <button class="st-btn" id="stPlay" title="Play / pause">⏸</button>
       <input type="range" id="stSpeed" min="0" max="8" step="1" value="3" aria-label="Time speed" />
       <span id="stSpeedLbl" style="font-size:11.5px;color:#9aa3bd;min-width:64px">5 d/s</span>
+      <button class="st-btn" id="stNow" title="Track real time, starting now" aria-pressed="false">🕒 <span class="lbl">Real-time</span></button>
+      <select class="st-btn ghost" id="stRatio" title="Real-time compression ratio" style="max-width:150px" disabled>
+        <option value="1">1 s = 1 s (real time)</option>
+        <option value="60">1 s = 1 min</option>
+        <option value="3600" selected>1 s = 1 hr</option>
+        <option value="21600">1 s = 6 hr</option>
+        <option value="86400">1 s = 1 day</option>
+      </select>
+      <span id="stLocal" style="font-size:11px;color:#9aa3bd;font-variant-numeric:tabular-nums" aria-live="off"></span>
     </div>
 
     <div class="st-hint">
@@ -298,10 +350,14 @@ function buildDOM(){
   camBtnExp   = root.querySelector('#stExplore');
   camBtnCine  = root.querySelector('#stCine');
 
-  // event dropdown
+  // event dropdown — grouped by category
   const sel = root.querySelector('#stEvent');
+  const cats = [];
+  EVENTS.forEach((e,i)=>{ let g=cats.find(c=>c.cat===(e.cat||'Events')); if(!g){ g={cat:e.cat||'Events', items:[]}; cats.push(g); } g.items.push(i); });
   sel.innerHTML = '<option value="">Jump to an event…</option>' +
-    EVENTS.map((e,i)=>`<option value="${i}">${e.date} · ${e.name}</option>`).join('');
+    cats.map(g=>`<optgroup label="${g.cat}">`+
+      g.items.map(i=>`<option value="${i}">${EVENTS[i].date} · ${EVENTS[i].name}</option>`).join('')+
+      `</optgroup>`).join('');
   sel.addEventListener('change', ()=>{ if (sel.value!=='') jumpToEvent(+sel.value); });
 
   // wiring
@@ -311,12 +367,16 @@ function buildDOM(){
   root.querySelector('#stAdd').addEventListener('click', addPrimitiveMenu);
   root.querySelector('#stImport').addEventListener('click', ()=>root.querySelector('#stFile').click());
   root.querySelector('#stFile').addEventListener('change', e=>{ handleFiles(e.target.files); e.target.value=''; });
+  root.querySelector('#stNav').addEventListener('click', toggleNavMode);
+  root.querySelector('#stLoc').addEventListener('click', dropMyLocation);
   root.querySelector('#stSave').addEventListener('click', saveScene);
   root.querySelector('#stExport').addEventListener('click', exportScene);
-  playBtn.addEventListener('click', ()=>{ playing=!playing; playBtn.textContent = playing?'⏸':'▶'; });
-  dateInput.addEventListener('change', ()=>{ simDate = new Date(dateInput.value+'T00:00:00Z'); updatePlanets(); });
+  playBtn.addEventListener('click', ()=>{ setRealtime(false); playing=!playing; playBtn.textContent = playing?'⏸':'▶'; });
+  dateInput.addEventListener('change', ()=>{ setRealtime(false); simDate = new Date(dateInput.value+'T00:00:00Z'); updatePlanets(); });
   const SPD=[0,1,2,5,15,45,120,365,1460];
-  speedInput.addEventListener('input', ()=>{ timeScale=SPD[+speedInput.value]; root.querySelector('#stSpeedLbl').textContent = timeScale+' d/s'; });
+  speedInput.addEventListener('input', ()=>{ setRealtime(false); timeScale=SPD[+speedInput.value]; root.querySelector('#stSpeedLbl').textContent = timeScale+' d/s'; });
+  root.querySelector('#stNow').addEventListener('click', ()=>setRealtime(!realtime));
+  root.querySelector('#stRatio').addEventListener('change', ()=>{ if (realtime) applyRealtimeRatio(); });
 
   // drag + drop
   root.addEventListener('dragover', e=>{ e.preventDefault(); root.classList.add('dragging'); });
@@ -387,6 +447,13 @@ function buildScene(){
   refreshObjList();
   window.addEventListener('resize', onResize);
   renderer.domElement.addEventListener('pointerdown', onPointerDown);
+  // Cinematic yields to the user: any manual steering pauses auto-direction.
+  const markInput = ()=>{ cineLastInput = performance.now(); };
+  renderer.domElement.addEventListener('pointerdown', markInput);
+  renderer.domElement.addEventListener('wheel', markInput, { passive:true });
+  // Resilience: recover gracefully from a lost/restored WebGL context.
+  renderer.domElement.addEventListener('webglcontextlost', e=>{ e.preventDefault(); playing=false; cancelAnimationFrame(raf); raf=0; toast('Graphics context lost — recovering…'); });
+  renderer.domElement.addEventListener('webglcontextrestored', ()=>{ if (open && !raf){ try{ clock.start(); }catch(err){} animate(); } });
   window.addEventListener('keydown', onKey);
 }
 
@@ -510,6 +577,10 @@ function activeEclipse(jd){
 }
 
 function tickCinematic(dt){
+  // Non-restrictive cinematic: if the user is actively steering (recent orbit
+  // drag or wheel), yield full control and don't auto-cut. Auto-direction
+  // resumes a few seconds after the user lets go.
+  if (performance.now() - cineLastInput < 4000) return;
   cineT += dt; cineNextCut -= dt;
   if (cineNextCut <= 0){
     const keys = ['earth','earth','mars','jupiter','saturn','venus'];
@@ -529,27 +600,51 @@ function tickCinematic(dt){
   orbit.target.lerp(tgt, 1 - Math.pow(0.004, dt));
 }
 
-let raf = 0;
+let raf = 0, lastClockSec = 0;
 function animate(){
   raf = requestAnimationFrame(animate);
-  const dt = Math.min(0.05, clock.getDelta());
+  try {
+    const dt = Math.min(0.05, clock.getDelta());
 
-  if (playing){
-    simDate = new Date(simDate.getTime() + timeScale*dt*DAY_MS);
-    updatePlanets();
-  }
-  // planet spin (visual, exaggerated)
-  for (const p of PLANETS){
-    const rec = planetMeshes[p.key];
-    rec.spin.rotation.y += (p.rot!==0 ? (1/p.rot) : 0) * dt * 0.6;
-  }
-  if (asteroidBelt) asteroidBelt.rotation.y += dt*0.02;
-  if (meteorSys) updateMeteors(dt);
+    if (playing){
+      simDate = new Date(simDate.getTime() + timeScale*dt*DAY_MS);
+      updatePlanets();
+    }
+    // planet spin (visual, exaggerated)
+    for (const p of PLANETS){
+      const rec = planetMeshes[p.key];
+      rec.spin.rotation.y += (p.rot!==0 ? (1/p.rot) : 0) * dt * 0.6;
+    }
+    if (asteroidBelt) asteroidBelt.rotation.y += dt*0.02;
+    if (meteorSys) updateMeteors(dt);
+    // NAVLINQ midpoint tracks the planets as they move
+    if (navMode && navSel.size>=2 && playing) updateNav();
 
-  pollGamepad(dt);
-  if (camMode==='cinematic') tickCinematic(dt);
-  orbit.update();
-  renderer.render(scene, camera);
+    pollGamepad(dt);
+    if (camMode==='cinematic') tickCinematic(dt);
+    orbit.update();
+    renderer.render(scene, camera);
+
+    // local wall-clock readout (once per second)
+    const nowSec = (performance.now()/1000)|0;
+    if (nowSec !== lastClockSec){ lastClockSec = nowSec; updateLocalClock(); }
+
+    rebootCount = 0;                                   // a clean frame clears the fault counter
+  } catch(err){
+    handleRenderFault(err);
+  }
+}
+
+/* Resilience — if the render loop throws (e.g. a transient GPU/driver hiccup),
+   pause, surface a toast, and attempt a bounded "timed reboot" of the loop. */
+function handleRenderFault(err){
+  console.error('[Cosmos Studio] render fault:', err);
+  cancelAnimationFrame(raf); raf = 0;
+  if (rebootCount >= 3){ toast('3D view paused after repeated errors — reopen to retry'); return; }
+  rebootCount++;
+  toast('Recovering the 3D view…');
+  clearTimeout(rebootTimer);
+  rebootTimer = setTimeout(()=>{ if (open && !raf){ try{ clock.start(); }catch(e){} animate(); } }, 1200);
 }
 
 function onResize(){
@@ -564,19 +659,36 @@ function onResize(){
    ------------------------------------------------------------------------- */
 function jumpToEvent(i){
   const e = EVENTS[i];
+  setRealtime(false);
   simDate = new Date(e.date+'T00:00:00Z');
   playing = false; playBtn.textContent = '▶';
   updatePlanets();
-  clearMeteors();
+  clearMeteors(); clearEventPins();
   if (e.type==='meteor') startMeteors();
-  // badge
+  // drop a pin at the event's Earth location, if it has one
+  if (Array.isArray(e.where)) earthPin(e.where[0], e.where[1], 0xff5a7a, e.name, true);
+  // badge (with an EWI Trading link for market events)
   eventNoteEl.style.display='block';
-  eventNoteEl.innerHTML = `<b>${e.name}</b><br><span style="color:#c6cde0">${e.note}</span>`;
+  const link = e.link==='trading'
+    ? `<br><a href="${tradingURL()}" target="_blank" rel="noopener" style="color:#b7a5ff;font-weight:700;text-decoration:none">Open EWI Trading Command Center →</a>`
+    : '';
+  eventNoteEl.innerHTML = `<b>${e.name}</b><br><span style="color:#c6cde0">${e.note}</span>${link}`;
   // frame the relevant body
-  if (e.type==='lunar' || e.type==='solar' || e.type==='asteroid') focusKey('earth');
+  if (e.focus && planetMeshes[e.focus]) focusKey(e.focus);
   else focusKey('earth');
   setCamMode('cinematic');
   toast('Jumped to ' + e.date);
+}
+
+/* Best-effort URL for the EWI Trading Command Center — works from the local
+   multi-app workspace (…/ewi-cosmos/) and falls back to the suite Home. */
+function tradingURL(){
+  try{
+    const p = location.pathname;
+    if (p.includes('/ewi-cosmos/')) return '../ewi-trading-platform/index.html';
+    if (window.EWI_TRADING_URL) return window.EWI_TRADING_URL;
+    return '../';                              // suite Home (published mirror)
+  }catch(e){ return '../'; }
 }
 
 /* meteor shower particle system */
@@ -608,14 +720,180 @@ function updateMeteors(dt){
 function clearMeteors(){ if (meteorSys){ scene.remove(meteorSys); meteorSys.geometry.dispose(); meteorSys=null; } }
 
 /* ---------------------------------------------------------------------------
+   5b.  Earth surface pins (events + the user's real-world location)
+   ------------------------------------------------------------------------- */
+// Geographic lat/lon → a unit vector on the planet sphere (Y-up scene frame).
+function latLonToVec3(lat, lon, r){
+  const phi = (90 - lat) * DEG, theta = (lon + 180) * DEG;
+  return new THREE.Vector3(
+    -r * Math.sin(phi) * Math.cos(theta),
+     r * Math.cos(phi),
+     r * Math.sin(phi) * Math.sin(theta)
+  );
+}
+function earthPin(lat, lon, color, label, isEvent){
+  const earth = planetMeshes.earth; if (!earth) return null;
+  const g = new THREE.Group();
+  const ep = PLANETS.find(x=>x.key==='earth');
+  const size = ep ? ep.size : 0.32;                    // Earth's scene radius
+  const local = latLonToVec3(lat, lon, size*1.02);
+  const pin = new THREE.Mesh(new THREE.SphereGeometry(0.05,16,16),
+    new THREE.MeshBasicMaterial({ color }));
+  pin.position.copy(local);
+  // a short stalk so the pin reads above the surface
+  const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.006,0.006, size*0.5, 8),
+    new THREE.MeshBasicMaterial({ color, transparent:true, opacity:0.7 }));
+  stalk.position.copy(local.clone().multiplyScalar(0.85));
+  stalk.lookAt(0,0,0); stalk.rotateX(Math.PI/2);
+  g.add(pin); g.add(stalk);
+  g.userData = { isEvent:!!isEvent, label:label||'' };
+  earth.group.add(g);                                  // rides with Earth as it orbits
+  earthPins.push(g);
+  return g;
+}
+function clearEventPins(){
+  for (let i=earthPins.length-1;i>=0;i--){
+    if (earthPins[i].userData.isEvent){ earthPins[i].parent && earthPins[i].parent.remove(earthPins[i]); earthPins.splice(i,1); }
+  }
+}
+function dropMyLocation(){
+  if (!navigator.geolocation){ toast('Geolocation is not available on this device'); return; }
+  toast('Requesting your location…');
+  navigator.geolocation.getCurrentPosition(pos=>{
+    const { latitude, longitude } = pos.coords;
+    // remove any previous location pin (non-event)
+    for (let i=earthPins.length-1;i>=0;i--){ if (!earthPins[i].userData.isEvent){ earthPins[i].parent && earthPins[i].parent.remove(earthPins[i]); earthPins.splice(i,1); } }
+    earthPin(latitude, longitude, 0x4cd964, 'You are here', false);
+    eventNoteEl.style.display='block';
+    eventNoteEl.innerHTML = `<b>You are here</b><br><span style="color:#c6cde0">≈ ${latitude.toFixed(3)}°, ${longitude.toFixed(3)}° — pinned on Earth (approx.).</span>`;
+    focusKey('earth');
+    toast('Pinned your location on Earth');
+  }, err=>{
+    toast(err.code===1 ? 'Location permission denied' : 'Could not get location');
+  }, { enableHighAccuracy:false, timeout:8000, maximumAge:600000 });
+}
+
+/* ---------------------------------------------------------------------------
+   5c.  NAVLINQ — gravity-weighted midpoint of a chosen set of bodies
+   ------------------------------------------------------------------------- */
+function toggleNavMode(){
+  navMode = !navMode;
+  const btn = root.querySelector('#stNav');
+  btn.classList.toggle('on', navMode);
+  btn.setAttribute('aria-pressed', navMode ? 'true' : 'false');
+  if (navMode){
+    transform.detach();
+    toast('NAVLINQ — click 2 or more planets to link their gravity-weighted midpoint');
+  } else {
+    navSel.clear(); clearNav(); eventNoteEl.style.display='none';
+  }
+}
+function navToggleBody(key){
+  if (!key || key==='Sun') return;
+  if (navSel.has(key)) navSel.delete(key); else navSel.add(key);
+  highlightNav();
+  updateNav();
+}
+function highlightNav(){
+  objListEl.querySelectorAll('.st-item').forEach(el=>{
+    el.classList.toggle('sel', navSel.has(el.dataset.id));
+  });
+}
+// Mass-weighted heliocentric midpoint (AU) of the selected planets = their
+// barycenter, i.e. the point about which their gravity balances.
+function navBarycenterAU(jd){
+  let M = 0; const acc = new THREE.Vector3();
+  navSel.forEach(key=>{
+    const p = PLANETS.find(x=>x.key===key); if (!p) return;
+    const m = p.mass || 1e-9;
+    acc.addScaledVector(heliocentric(p, jd), m); M += m;
+  });
+  return M>0 ? acc.multiplyScalar(1/M) : acc;
+}
+function clearNav(){
+  if (navGroup){ scene.remove(navGroup); navGroup.traverse(o=>{ o.geometry&&o.geometry.dispose(); o.material&&o.material.dispose&&o.material.dispose(); }); navGroup=null; }
+}
+function updateNav(){
+  clearNav();
+  if (navSel.size < 2){
+    if (navMode && navSel.size===1){ eventNoteEl.style.display='block'; eventNoteEl.innerHTML='<b>NAVLINQ</b><br><span style="color:#c6cde0">Select at least one more planet to compute a midpoint.</span>'; }
+    return;
+  }
+  const jd = dateToJD(simDate);
+  const baryAU = navBarycenterAU(jd);
+  const mid = auToScene(baryAU);
+  navGroup = new THREE.Group(); navGroup.name = 'NAVLINQ';
+  // links from each node to the midpoint
+  const linkMat = new THREE.LineBasicMaterial({ color:0x7c5cff, transparent:true, opacity:0.85 });
+  navSel.forEach(key=>{
+    const rec = planetMeshes[key]; if (!rec) return;
+    const g = new THREE.BufferGeometry().setFromPoints([ rec.group.position.clone(), mid.clone() ]);
+    navGroup.add(new THREE.Line(g, linkMat));
+  });
+  // midpoint marker
+  const marker = new THREE.Mesh(new THREE.SphereGeometry(0.16,20,20),
+    new THREE.MeshBasicMaterial({ color:0xb7a5ff }));
+  marker.position.copy(mid);
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.26,0.32,32),
+    new THREE.MeshBasicMaterial({ color:0x7c5cff, side:THREE.DoubleSide, transparent:true, opacity:0.8 }));
+  ring.position.copy(mid); ring.lookAt(camera.position);
+  navGroup.add(marker); navGroup.add(ring);
+  scene.add(navGroup);
+  // readout: a celestial lat/long (ecliptic λ, β) + heliocentric distance
+  const r = baryAU.length();
+  const lon = norm360(Math.atan2(baryAU.y, baryAU.x)/DEG);
+  const lat = r>1e-9 ? Math.asin(baryAU.z/r)/DEG : 0;
+  eventNoteEl.style.display='block';
+  eventNoteEl.innerHTML = `<b>NAVLINQ midpoint · ${navSel.size} nodes</b><br>` +
+    `<span style="color:#c6cde0">Ecliptic λ ${lon.toFixed(2)}° · β ${lat.toFixed(2)}° · ${r.toFixed(3)} AU from the Sun</span><br>` +
+    `<span style="color:#9aa3bd;font-size:11px">Gravity-weighted (mass-weighted barycenter) of ${[...navSel].join(', ')}.</span>`;
+}
+
+/* ---------------------------------------------------------------------------
+   5d.  Real-time tracking + selectable time compression (Task 3)
+   ------------------------------------------------------------------------- */
+function applyRealtimeRatio(){
+  const sel = root.querySelector('#stRatio');
+  const secPerSec = parseFloat(sel.value) || 1;         // sim-seconds per real second
+  timeScale = secPerSec / 86400;                        // → sim-days per real second
+  root.querySelector('#stSpeedLbl').textContent = 'real-time';
+}
+function setRealtime(on){
+  if (realtime === on) return;
+  realtime = on;
+  const btn = root.querySelector('#stNow'); const ratio = root.querySelector('#stRatio');
+  if (!btn) return;
+  btn.classList.toggle('on', on);
+  btn.setAttribute('aria-pressed', on ? 'true':'false');
+  ratio.disabled = !on;
+  if (on){
+    simDate = new Date();
+    playing = true; playBtn.textContent = '⏸';
+    applyRealtimeRatio();
+    updatePlanets();
+    toast('Real-time tracking on');
+  } else {
+    root.querySelector('#stSpeedLbl').textContent = timeScale+' d/s';
+  }
+}
+function updateLocalClock(){
+  const el = root && root.querySelector('#stLocal'); if (!el) return;
+  const now = new Date();
+  el.textContent = now.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+}
+
+/* ---------------------------------------------------------------------------
    6.  Camera modes + focus + selection
    ------------------------------------------------------------------------- */
 function setCamMode(m){
   camMode = m;
   camBtnExp.classList.toggle('on', m==='explore');
   camBtnCine.classList.toggle('on', m==='cinematic');
-  orbit.enabled = (m==='explore');
-  if (m==='cinematic'){ transform.detach(); cineNextCut = 0; }
+  // Both modes now let the user orbit/zoom freely (Task 3: make cinematic
+  // intuitive, not restrictive). In cinematic, the camera is gently
+  // auto-directed only while the user isn't actively steering.
+  orbit.enabled = true;
+  if (m==='cinematic'){ transform.detach(); cineNextCut = 0; cineLastInput = 0; }
 }
 
 function focusKey(key){
@@ -649,6 +927,12 @@ function onPointerDown(e){
   const hit = raycaster.intersectObjects(targets, true)[0];
   if (hit){
     let o = hit.object;
+    // NAVLINQ mode: clicking a planet toggles its membership in the midpoint set
+    if (navMode){
+      const key = o.userData.planet || o.name;
+      if (key && planetMeshes[key]){ navToggleBody(key); }
+      return;
+    }
     // resolve imported roots
     const im = imported.find(x=> o===x.object3d || o.parent && isDescendant(x.object3d,o));
     if (im){ selectImported(im); }
@@ -738,7 +1022,8 @@ function refreshObjList(){
       const id = el.dataset.id;
       const im = imported.find(x=>x.id===id);
       if (im){ focusObject(im.object3d); selectImported(im); }
-      else if (id==='sun'){ selectPlanet('Sun'); focusKey('mercury'); }
+      else if (id==='sun'){ if(navMode) return; selectPlanet('Sun'); focusKey('mercury'); }
+      else if (navMode && planetMeshes[id]){ navToggleBody(id); }
       else { focusKey(id); selectPlanet(id); }
     });
     const x = el.querySelector('.x');
@@ -1051,4 +1336,7 @@ if (document.readyState==='loading') document.addEventListener('DOMContentLoaded
 else wireOpener();
 
 // expose a tiny hook for automated validation
-window.__cosmosStudio = { open:openStudio, close, heliocentric, auToScene, PLANETS, EVENTS, get imported(){return imported;} };
+window.__cosmosStudio = { open:openStudio, close, heliocentric, auToScene, PLANETS, EVENTS,
+  jumpToEvent, toggleNavMode, navBarycenterAU, setRealtime, dropMyLocation,
+  get navSelection(){ return [...navSel]; }, get realtime(){ return realtime; },
+  get imported(){return imported;} };

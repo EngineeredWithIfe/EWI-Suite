@@ -216,6 +216,21 @@
     </div>
 
     <div class="sec">
+      <h3>Predicted events</h3>
+      <p class="hint">Real &amp; forecast events across Earth and space — eclipses, launches, storms, markets, and more. Opens the 3D studio and flies you to the moment.</p>
+      <div class="row">
+        <select id="evtSel" aria-label="Jump to a predicted event" style="width:100%">
+          <option value="">Loading events…</option>
+        </select>
+      </div>
+      <div class="switch"><span>NAVLINQ midpoint</span><span class="toggle" id="navToggle" role="switch" aria-checked="false" tabindex="0" aria-label="NAVLINQ midpoint mode"></span></div>
+      <p class="hint" id="navHint" style="display:none">Click 2 or more bodies to link them; their gravity-weighted midpoint (barycenter) is drawn live.</p>
+      <div id="navReadout" style="display:none;font-size:11.5px;color:var(--muted-2);font-variant-numeric:tabular-nums;margin-top:6px"></div>
+      <button class="btn ghost" id="locBtn" style="width:100%;margin-top:8px" title="Show your real-world location">📍 My location</button>
+      <div id="locReadout" style="display:none;font-size:11.5px;color:var(--muted-2);font-variant-numeric:tabular-nums;margin-top:6px"></div>
+    </div>
+
+    <div class="sec">
       <h3>Time &amp; forces</h3>
       <div class="seg" role="group" aria-label="Playback">
         <button id="playBtn" aria-pressed="true">▶ Run</button>
@@ -395,6 +410,8 @@
     follow: false,
     simTime: 0,                 // years
     cam: {x:0, y:0, scale:60},  // world→px: px = (world - cam)·scale ; scale = px per AU
+    navMode: false,             // NAVLINQ midpoint mode
+    navlinq: new Set(),         // ids of bodies linked in the midpoint
   };
   const SPEEDS = [0.1, 0.25, 0.5, 1, 2, 4, 8, 16, 40];
   const SPEED_LABEL = ["0.1×","0.25×","0.5×","1×","2×","4×","8×","16×","40×"];
@@ -718,8 +735,51 @@
       ctx.fillStyle=rgb(prev); ctx.beginPath(); ctx.arc(x0,y0,6,0,7); ctx.fill();
     }
 
+    // NAVLINQ midpoint — gravity-weighted barycenter of the linked bodies
+    if(S.navMode && S.navlinq.size>=1){
+      const mid=navMidpoint();
+      // highlight linked bodies
+      for(const id of S.navlinq){
+        const b=byId(id); if(!b) continue;
+        const [bx,by]=w2s(b.x,b.y);
+        ctx.strokeStyle="rgba(124,92,255,0.9)"; ctx.lineWidth=2;
+        ctx.beginPath(); ctx.arc(bx,by,clamp(collR(b)*S.cam.scale,2.2,72)+5,0,7); ctx.stroke();
+      }
+      if(mid && S.navlinq.size>=2){
+        const [mx,my]=w2s(mid.x,mid.y);
+        // links
+        ctx.strokeStyle="rgba(124,92,255,0.55)"; ctx.lineWidth=1.3; ctx.setLineDash([6,4]);
+        for(const id of S.navlinq){ const b=byId(id); if(!b) continue; const [bx,by]=w2s(b.x,b.y); ctx.beginPath(); ctx.moveTo(bx,by); ctx.lineTo(mx,my); ctx.stroke(); }
+        ctx.setLineDash([]);
+        // midpoint marker
+        ctx.fillStyle="#b7a5ff"; ctx.beginPath(); ctx.arc(mx,my,6,0,7); ctx.fill();
+        ctx.strokeStyle="rgba(124,92,255,0.9)"; ctx.lineWidth=1.5; ctx.beginPath(); ctx.arc(mx,my,11,0,7); ctx.stroke();
+        ctx.fillStyle="rgba(255,255,255,0.85)"; ctx.font="600 11px var(--font)";
+        ctx.fillText("NAVLINQ midpoint", mx+15, my+4);
+      }
+    }
+
     // scale bar
     drawScaleBar();
+  }
+
+  // Mass-weighted midpoint (barycenter) of the NAVLINQ-linked bodies.
+  function navMidpoint(){
+    let M=0,x=0,y=0,n=0;
+    for(const id of S.navlinq){ const b=byId(id); if(!b) continue; const m=Math.max(b.m,1e-12); x+=b.x*m; y+=b.y*m; M+=m; n++; }
+    if(!n||M<=0) return null;
+    return { x:x/M, y:y/M, M };
+  }
+  function updateNavReadout(){
+    const el=document.getElementById("navReadout"); if(!el) return;
+    if(!S.navMode || S.navlinq.size<2){ el.style.display="none"; return; }
+    const mid=navMidpoint(); if(!mid){ el.style.display="none"; return; }
+    const r=Math.hypot(mid.x,mid.y);
+    const lon=((Math.atan2(mid.y,mid.x)*180/Math.PI)+360)%360;
+    el.style.display="block";
+    el.innerHTML=`<b style="color:#b7a5ff">Midpoint · ${S.navlinq.size} nodes</b><br>`+
+      `Longitude ${lon.toFixed(1)}° · ${r.toFixed(3)} AU from origin<br>`+
+      `x ${mid.x.toFixed(3)} · y ${mid.y.toFixed(3)} AU`;
   }
 
   function drawScaleBar(){
@@ -743,7 +803,9 @@
   //  MAIN LOOP
   // =========================================================================
   let last=performance.now(), acc=0;
+  let frameFaults=0, frameReboot=0;
   function frame(now){
+   try{
     const dtReal=Math.min(0.05,(now-last)/1000); last=now;
     if(S.running){
       const yrs=SPEEDS[S.speedIdx]*dtReal;      // sim-years to advance this frame
@@ -758,7 +820,17 @@
     }
     draw();
     refreshHud();
+    if(S.navMode) updateNavReadout();
+    frameFaults=0;                              // a clean frame clears the fault counter
     requestAnimationFrame(frame);
+   }catch(err){
+    // Resilience: log, skip the bad frame, and auto-restart the loop (bounded).
+    console.error("[EWI Cosmos] frame fault:", err);
+    if(frameReboot>=5){ toast("Simulation paused after repeated errors — press Reset"); return; }
+    frameReboot++; frameFaults++;
+    last=performance.now();
+    setTimeout(()=>requestAnimationFrame(frame), 400);
+   }
   }
 
   let trailTick=0;
@@ -992,6 +1064,12 @@
     }
     // select tool
     const b=pickBody(px,py);
+    if(S.navMode){
+      if(b){ if(S.navlinq.has(b.id)) S.navlinq.delete(b.id); else S.navlinq.add(b.id); updateNavReadout(); }
+      drag={px,py,camx:S.cam.x,camy:S.cam.y,moved:false};
+      view.classList.add("grabbing");
+      return;
+    }
     if(b){ S.selected=b.id; updateInspector(); }
     else { S.selected=null; updateInspector(); }
     drag={px,py,camx:S.cam.x,camy:S.cam.y,moved:false};
@@ -1106,6 +1184,50 @@
   wireToggle("trailToggle","trails",v=>{ if(!v) for(const b of S.bodies) b.trail.length=0; });
   wireToggle("hzToggle","hz");
   wireToggle("velToggle","vectors");
+
+  // NAVLINQ midpoint mode
+  wireToggle("navToggle","navMode",v=>{
+    document.getElementById("navHint").style.display = v?"block":"none";
+    if(!v){ S.navlinq.clear(); }
+    updateNavReadout();
+    toast(v?"NAVLINQ on — click 2+ bodies to link their midpoint":"NAVLINQ off");
+  });
+
+  // Predicted-events dropdown — populated from the 3D studio's catalog.
+  (function initEvents(){
+    const sel=document.getElementById("evtSel");
+    let tries=0;
+    const fill=()=>{
+      const cs=window.__cosmosStudio;
+      if(!cs||!Array.isArray(cs.EVENTS)){ if(tries++<40){ setTimeout(fill,150); } else { sel.innerHTML='<option value="">Events unavailable</option>'; } return; }
+      const groups=[];
+      cs.EVENTS.forEach((e,i)=>{ let g=groups.find(x=>x.cat===(e.cat||"Events")); if(!g){ g={cat:e.cat||"Events",items:[]}; groups.push(g); } g.items.push(i); });
+      sel.innerHTML='<option value="">Jump to an event…</option>'+
+        groups.map(g=>`<optgroup label="${g.cat}">`+
+          g.items.map(i=>`<option value="${i}">${cs.EVENTS[i].date} · ${cs.EVENTS[i].name}</option>`).join('')+
+          `</optgroup>`).join('');
+    };
+    fill();
+    sel.addEventListener("change",()=>{
+      const cs=window.__cosmosStudio; if(!cs||sel.value==="") return;
+      const idx=+sel.value;
+      cs.open();                                  // open the 3D studio
+      setTimeout(()=>{ try{ cs.jumpToEvent(idx); }catch(e){} }, 60);
+      toast("Opening in 3D — "+cs.EVENTS[idx].name);
+    });
+  })();
+
+  // My-location readout (2D shows coordinates; 3D drops a pin on Earth)
+  document.getElementById("locBtn").addEventListener("click",()=>{
+    const out=document.getElementById("locReadout");
+    if(!navigator.geolocation){ out.style.display="block"; out.textContent="Geolocation is not available on this device."; return; }
+    out.style.display="block"; out.textContent="Requesting your location…";
+    navigator.geolocation.getCurrentPosition(pos=>{
+      const {latitude,longitude}=pos.coords;
+      out.innerHTML=`<b style="color:#4cd964">You are here</b><br>≈ ${latitude.toFixed(4)}°, ${longitude.toFixed(4)}°`;
+    }, err=>{ out.textContent = err.code===1?"Location permission denied.":"Could not get your location."; },
+      {enableHighAccuracy:false,timeout:8000,maximumAge:600000});
+  });
 
   // zoom buttons
   document.getElementById("zoomIn").onclick=()=>zoomAt(W/2,H/2,1.2);
