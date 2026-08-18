@@ -223,6 +223,7 @@ let navMode = false;
 const navSel = new Set();                     // planet keys
 let navGroup = null;                          // THREE.Group: links + midpoint marker
 let navMidMarker = null;                      // invisible pick proxy at the midpoint → click to focus/fly there
+let navFlyEngaged = false;                    // true while a fly-to-midpoint is engaged (button is a toggle)
 // Slide / truck camera mode: dragging (or a one-finger/trackpad gesture) moves
 // the focal point (orbit.target) freely to a new X·Y·Z in space, decoupled from
 // the currently-focused body — press G to toggle (tap the ✥ Slide button too).
@@ -382,6 +383,10 @@ function injectCSS(){
   .nv-read b{color:#fff}
   .nv-foot{font:500 10px -apple-system,system-ui,sans-serif;color:#8b93ad;margin-top:6px;line-height:1.55}
   .nv-foot b{color:#aeb6cf}
+  .nv-lay{font:500 9.5px -apple-system,system-ui,sans-serif;color:#8892ac;margin-top:1px;font-style:italic}
+  .nv-eta{font:600 11px -apple-system,system-ui,sans-serif;color:#dfe4f2;margin:6px 0;line-height:1.55;padding:6px 8px;border:1px solid rgba(124,92,255,.28);border-radius:8px;background:rgba(124,92,255,.08)}
+  .nv-eta b{color:#fff}
+  .dn-mini.on{background:rgba(124,92,255,.30);border-color:rgba(124,92,255,.6);color:#fff}
   .nv-travel{margin-top:8px;border-top:1px solid rgba(255,255,255,.08);padding-top:4px}`;
   document.head.appendChild(s);
 }
@@ -1416,10 +1421,11 @@ function navTravelHTML(R){
   if (R.anyStar){
     const rows = R.nodes.map(n=>{
       const d = n.lyPos.distanceTo(R.phys.bary);
-      return `<tr><td>${n.name}</td><td>${d.toFixed(2)} ly</td><td>${d.toFixed(2)} yr</td></tr>`;
+      const sec = d*3.1556952e7;   // light-years → light-time seconds (1 ly = 1 yr of light travel)
+      return `<tr><td>${n.name}</td><td>${d.toFixed(2)} ly</td><td>${fmtDurTech(sec)}<div class="nv-lay">${fmtDurLay(sec)}</div></td></tr>`;
     }).join('');
     return `<div class="nv-sec">Interstellar leg — light-time only</div>
-      <div class="nv-scrollx"><table class="nv-tbl"><thead><tr><th>Node</th><th>To midpoint</th><th>One-way light time</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <div class="nv-scrollx"><table class="nv-tbl"><thead><tr><th>Node</th><th>To midpoint</th><th title="One-way light time: technical ETA on top, plain-language ETA below">One-way light time (ETA)</th></tr></thead><tbody>${rows}</tbody></table></div>
       <div class="nv-foot"><b>Basis.</b> One-way light time = distance ÷ c (c = 299,792.458 km·s⁻¹, exact) — a <b>hard relativistic floor</b>. Surface-escape and crewed/robotic transit times are omitted on purpose: no demonstrated propulsion reaches a meaningful fraction of c, so any figure would be false precision (<b>speculative</b>).</div>`;
   }
   const T = navTravelCompute(R);
@@ -1427,8 +1433,8 @@ function navTravelHTML(R){
   const rowsHtml = T.rows.map(x=>`<tr>
       <td>${x.name}</td><td>${x.g.toFixed(2)}</td><td>${x.vesc.toFixed(2)}</td>
       <td>${(x.eps/1e6).toFixed(1)}</td><td>${(x.propFrac*100).toFixed(1)}%</td>
-      <td>${fmtKm(x.dkm)}</td><td>${fmtSeconds(x.tCruise)}</td>
-      <td>${x.launchOffset < 1 ? '—' : '+'+fmtSeconds(x.launchOffset)}</td><td>${fmtSeconds(x.tLight)}</td><td>${x.T} K</td>
+      <td>${fmtKm(x.dkm)}</td><td>${fmtDurTech(x.tCruise)}<div class="nv-lay">${fmtDurLay(x.tCruise)}</div></td>
+      <td>${x.launchOffset < 1 ? '—' : '+'+fmtDurTech(x.launchOffset)}</td><td>${fmtDurTech(x.tLight)}<div class="nv-lay">${fmtDurLay(x.tLight)}</div></td><td>${x.T} K</td>
     </tr>`).join('');
   return `
     <div class="nv-sec">Per-point departure &amp; transfer to the barycenter</div>
@@ -1439,12 +1445,13 @@ function navTravelHTML(R){
         <th title="Specific escape energy μ/R = ½v_esc²">E_esc MJ/kg</th>
         <th title="Propellant mass fraction to escape the surface — chemical Isp 450 s (Tsiolkovsky)">Fuel</th>
         <th title="Straight-line distance to the barycenter">To midpoint</th>
-        <th title="Continuous-thrust flip-and-burn at 0.001 g (t = 2√(d/a))">Transit</th>
+        <th title="Continuous-thrust flip-and-burn at 0.001 g (t = 2√(d/a)) — technical ETA on top, plain-language ETA below">Transit (ETA)</th>
         <th title="Head start so every point arrives together">Launch Δt</th>
-        <th title="One-way light / command time to the midpoint (d ÷ c)">Comm 1-way</th>
+        <th title="One-way light / command time to the midpoint (d ÷ c) — technical + plain-language ETA">Comm 1-way</th>
         <th title="Mean surface / 1-bar temperature">T_surf</th>
       </tr></thead><tbody>${rowsHtml}</tbody></table></div>
     <div class="nv-sec">Rendezvous &amp; environment</div>
+    <div class="nv-eta">Full trip ETA to the midpoint (synchronised arrival): technical <b>${fmtDurTech(T.tMax)}</b> · in plain terms, <b>${fmtDurLay(T.tMax)}</b>. Round-trip command latency at the midpoint: <b>${fmtDurTech(T.maxLight*2)}</b> (<b>${fmtDurLay(T.maxLight*2)}</b>).</div>
     <div class="nv-read">
       Synchronised arrival: the farthest point launches first; each other point waits its <b>Launch Δt</b> so all reach the barycenter together — a common continuous-thrust flip-and-burn at 0.001 g (≈9.8 mm·s⁻²), used purely as a transparent yardstick, not a specific vehicle.<br>
       Barycenter environment: <b>${T.rBary.toFixed(3)} AU</b> from the Sun → blackbody equilibrium <b>${T.Tspace.toFixed(0)} K</b> (grey body, albedo 0; 2.725 K CMB floor). Longest one-way command latency in the set: <b>${fmtSeconds(T.maxLight)}</b> (round-trip ${fmtSeconds(T.maxLight*2)}).
@@ -1549,8 +1556,27 @@ function updateNav(){
   eventNoteEl.innerHTML = navReadoutHTML(R);
 }
 function navFlyToMidpoint(){
+  // Toggle behaviour: if a fly-to-midpoint is already engaged, clicking again
+  // cancels it (freezes the camera where it is); a further click re-triggers it.
+  if (navFlyEngaged){
+    if (dnFlight && dnFlight.active && dnFlight.tag==='navmid') dnFlight.active=false;
+    navFlyEngaged=false; navUpdateFlyBtn(); toast('Fly-to midpoint cancelled');
+    return;
+  }
   const R = navComputeMidpoints(); if (!R){ toast('Pick 2 or more bodies first'); return; }
-  dnFlyTo(R.phys.marker.clone(), R.anyStar ? 120 : 1.6, 'NAVLINQ midpoint');
+  // Arrive AT the actual X·Y·Z midpoint (not a wide stand-off): a minimal offset
+  // keeps the orbit pivot well-defined while the camera lands on the point itself.
+  const target = R.phys.marker.clone();
+  const standoff = R.anyStar ? Math.max(3, target.length()*0.0015) : 0.12;
+  navFlyEngaged=true; navUpdateFlyBtn();
+  dnFlyTo(target, standoff, 'NAVLINQ midpoint', 'navmid');
+}
+function navUpdateFlyBtn(){
+  const P = dnPanels.navlinq; if (!P) return;
+  const b = P.body.querySelector('#nvFly'); if (!b) return;
+  b.classList.toggle('on', navFlyEngaged);
+  b.setAttribute('aria-pressed', String(navFlyEngaged));
+  b.textContent = navFlyEngaged ? 'Cancel fly ✕' : 'Fly to midpoint ▶';
 }
 function buildNavlinqPanel(body){
   const chip=(id,label)=>`<button class="nv-chip" data-id="${id}">${label}</button>`;
@@ -1564,8 +1590,9 @@ function buildNavlinqPanel(body){
     <div class="dn-rowbtn"><button class="dn-mini" id="nvClear">Clear</button><button class="dn-mini" id="nvTravelBtn">Interplanetary travel ▾</button><button class="dn-mini" id="nvFly" style="margin-left:auto">Fly to midpoint ▶</button></div>
     <div id="nvTravel" class="nv-travel" style="display:none"></div>`;
   body.querySelectorAll('.nv-chip').forEach(c=>c.addEventListener('click', ()=>navToggleBody(c.dataset.id)));
-  body.querySelector('#nvClear').addEventListener('click', ()=>{ navSel.clear(); clearNav(); highlightNav(); navRefreshPanel(null); navRefreshTravel(); });
+  body.querySelector('#nvClear').addEventListener('click', ()=>{ navSel.clear(); clearNav(); highlightNav(); navRefreshPanel(null); navRefreshTravel(); if (dnFlight && dnFlight.tag==='navmid') dnFlight.active=false; navFlyEngaged=false; navUpdateFlyBtn(); });
   body.querySelector('#nvFly').addEventListener('click', navFlyToMidpoint);
+  navUpdateFlyBtn();
   body.querySelector('#nvTravelBtn').addEventListener('click', ()=>{
     navTravelOpen = !navTravelOpen;
     const el = body.querySelector('#nvTravel'), btn = body.querySelector('#nvTravelBtn');
@@ -2213,6 +2240,50 @@ function fmtSeconds(s){
   if (s<3.156e10) return (s/3.156e7).toFixed(1)+' yr';
   return (s/3.156e16).toFixed(2)+' Gyr';
 }
+// Human-calendar ETA helpers (seconds → readable). Gregorian mean year/month.
+const ETA_UNITS = [
+  ['millennium','millennia', 3.1556952e10],
+  ['century','centuries',    3.1556952e9],
+  ['decade','decades',       3.1556952e8],
+  ['year','years',           3.1556952e7],
+  ['month','months',         2629746],      // 30.436875 d
+  ['day','days',             86400],
+  ['hour','hours',           3600],
+  ['minute','minutes',       60],
+  ['second','seconds',       1]
+];
+// Technical ETA: precise breakdown across the 3 largest non-zero calendar units
+// (e.g. "3 years 2 months 14 days"). Sub-minute falls back to fmtSeconds.
+function fmtDurTech(s){
+  if (!isFinite(s) || s<=0) return '0 s';
+  if (s<60) return fmtSeconds(s);
+  let rem=s; const parts=[];
+  for (const [sing,plur,size] of ETA_UNITS){
+    if (rem>=size){
+      const v=Math.floor(rem/size); rem-=v*size;
+      if (v>0) parts.push(v+' '+(v===1?sing:plur));
+      if (parts.length>=3) break;
+    }
+  }
+  return parts.length ? parts.join(' ') : fmtSeconds(s);
+}
+// Layman ETA: one friendly, rounded phrase (e.g. "about 3 years", "just over 6 hours").
+function fmtDurLay(s){
+  if (!isFinite(s) || s<=0) return 'instant';
+  if (s<60) return 'under a minute';
+  for (const [sing,plur,size] of ETA_UNITS){
+    if (size<60) break;
+    if (s>=size){
+      const v=s/size, r=Math.round(v*10)/10;
+      const frac=r-Math.floor(r);
+      const word=(r===1?sing:plur);
+      const n=(r%1===0)?r.toFixed(0):r.toFixed(1);
+      const lead = frac>0.05 && frac<0.35 ? 'just over ' : (frac>0.65 ? 'nearly ' : 'about ');
+      return lead+n+' '+word;
+    }
+  }
+  return 'about '+(s/60).toFixed(0)+' minutes';
+}
 function fmtKm(km){
   if (km<0.001) return (km*1e6).toFixed(0)+' mm';
   if (km<1)     return (km*1000).toFixed(0)+' m';
@@ -2370,13 +2441,15 @@ function dnTempoSymbolic(){ // 247 zs → age of universe, log-mapped
   const lo=Math.log(2.47e-19), hi=Math.log(4.35e17);
   return Math.exp(lo+(hi-lo)*dnTempoFrac);
 }
-function dnFlyTo(destWorld, standoff, name){
+function dnFlyTo(destWorld, standoff, name, tag){
+  // A fly-to some other destination supersedes an engaged midpoint toggle.
+  if ((tag||null)!=='navmid' && navFlyEngaged){ navFlyEngaged=false; navUpdateFlyBtn(); }
   const dir=_dnV.copy(camera.position).sub(destWorld); if (dir.lengthSq()<1e-9) dir.set(0,0.4,1);
   dir.normalize();
   const end=destWorld.clone().add(dir.multiplyScalar(standoff));
   end.y += standoff*0.18;
   zoom3D.active=false;
-  dnFlight={ active:true, t:0, dur:dnTempoDur(),
+  dnFlight={ active:true, t:0, dur:dnTempoDur(), tag:tag||null,
     p0:camera.position.clone(), t0:orbit.target.clone(), p1:end, t1:destWorld.clone() };
   if (name) toast('→ '+name+' · '+fmtSeconds(dnTempoSymbolic())+' tempo · '+dnFlight.dur.toFixed(1)+'s');
 }
@@ -2391,7 +2464,11 @@ function dnTickFlight(dt){
   const u=dnFlight.t, e=u<0.5?4*u*u*u:1-Math.pow(-2*u+2,3)/2; // smootherstep-ish
   camera.position.lerpVectors(dnFlight.p0,dnFlight.p1,e);
   orbit.target.lerpVectors(dnFlight.t0,dnFlight.t1,e);
-  if (dnFlight.t>=1) dnFlight.active=false;
+  if (dnFlight.t>=1){
+    dnFlight.active=false;
+    // Arrived: release the toggle so a further click flies to the midpoint again.
+    if (dnFlight.tag==='navmid'){ navFlyEngaged=false; navUpdateFlyBtn(); }
+  }
 }
 function dnPinPointer(e){
   if(!dnPinsVisible||!dnPins.length) return;
@@ -2717,6 +2794,7 @@ function deepNavTick(dt){
 window.__cosmosStudio = { open:openStudio, close, heliocentric, auToScene, PLANETS, EVENTS,
   jumpToEvent, toggleNavMode, navBarycenterAU, setRealtime, dropMyLocation,
   navToggle:(id)=>navToggleBody(id), navFlyToMidpoint,
+  get navFlyEngaged(){ return navFlyEngaged; }, fmtDurTech:(s)=>fmtDurTech(s), fmtDurLay:(s)=>fmtDurLay(s),
   setPanMode:(on)=>setPanMode(on), get panMode(){ return panMode; },
   get navSelection(){ return [...navSel]; }, get realtime(){ return realtime; },
   get navMidpoint(){ const R=navComputeMidpoints(); if(!R) return null;
