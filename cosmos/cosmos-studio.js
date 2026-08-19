@@ -212,6 +212,8 @@ const NOVA_DUR = 54;                          // seconds of wall-clock for the f
 let novaShell = null;                          // expanding planetary-nebula ejecta shell
 let _novaSaved = null;                         // saved scene state for a clean restore
 let novaBar = null, novaFlashEl = null;        // control "screen" + climax flash overlay
+let novaRec = null;                            // active Sun's End MediaRecorder session (or null)
+let novaRecComp = null;                        // per-frame compositor for the "scene + cards" export
 // Remember the last render view (2D sandbox vs 3D studio) on this device, so a
 // refresh / reopened tab restores exactly where the user left off.
 const VIEW_KEY = 'ewi-cosmos-view';            // localStorage: '2d' | '3d'
@@ -357,6 +359,12 @@ function injectCSS(){
     height:30px;min-width:32px;padding:0 12px;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;
     display:inline-flex;align-items:center;justify-content:center;gap:6px;transition:background .15s,border-color .15s}
   .st-nova button:hover{background:rgba(255,138,60,.2);border-color:rgba(255,138,60,.55)}
+  .st-nova button:disabled{opacity:.4;cursor:not-allowed}
+  .st-nova #stNovaExport.nv-rec{color:#ffb3b3;border-color:rgba(255,90,90,.6);background:rgba(255,60,60,.18)}
+  .st-nova .nv-menu{position:absolute;right:10px;bottom:calc(100% + 8px);display:flex;flex-direction:column;gap:6px;
+    padding:8px;border-radius:12px;background:rgba(14,12,20,.97);border:1px solid rgba(255,138,60,.4);
+    box-shadow:0 20px 60px rgba(0,0,0,.6);z-index:20}
+  .st-nova .nv-menu button{white-space:nowrap;justify-content:flex-start;text-align:left;min-width:210px}
   .st-nova-flash{position:absolute;inset:0;z-index:7;pointer-events:none;opacity:0;background:radial-gradient(circle at 50% 50%,#fff 0%,#ffd9a0 38%,rgba(255,180,110,0) 72%)}
   @media (max-width:820px){
     .st-panel{width:44vw;max-width:250px;top:60px;bottom:120px}
@@ -515,6 +523,7 @@ function buildDOM(){
         <span class="nv-spacer"></span>
         <button id="stNovaPlay" title="Pause / resume playback">⏸</button>
         <button id="stNovaReplay" title="Replay from the beginning">↺</button>
+        <button id="stNovaExport" title="Export this Sun&rsquo;s End as an MP4 video">⤓ MP4</button>
         <button id="stNovaExit" title="Exit — return to the normal 3D view">✕</button>
       </div>
       <input type="range" class="nv-scrub" id="stNovaScrub" min="0" max="1000" value="0" step="1" aria-label="Scrub the time-lapse" />
@@ -582,6 +591,7 @@ function buildDOM(){
   root.querySelector('#stNova').addEventListener('click', ()=>novaToggle());
   root.querySelector('#stNovaPlay').addEventListener('click', novaTogglePlay);
   root.querySelector('#stNovaReplay').addEventListener('click', novaReplay);
+  root.querySelector('#stNovaExport').addEventListener('click', novaExportMenu);
   root.querySelector('#stNovaExit').addEventListener('click', ()=>novaExit());
   root.querySelector('#stNovaScrub').addEventListener('input', e=>novaSeek((+e.target.value)/1000));
   root.querySelector('#stAdd').addEventListener('click', addPrimitiveMenu);
@@ -1167,6 +1177,7 @@ function animate(){
     deepNavTick(dt);
     orbit.update();
     renderer.render(scene, camera);
+    if (novaRecComp) novaRecComposite();        // grab the fresh frame for a "scene + cards" export
 
     // local wall-clock readout (once per second)
     const nowSec = (performance.now()/1000)|0;
@@ -1957,6 +1968,7 @@ function novaEnter(){
 }
 function novaExit(){
   if (!novaOn) return;
+  if (novaRec) novaRecStop(false);              // discard any in-progress recording
   novaOn=false; novaPlaying=false;
   const btn=root&&root.querySelector('#stNova'); if(btn){ btn.classList.remove('on'); btn.setAttribute('aria-pressed','false'); }
   if (novaBar) novaBar.classList.remove('on');
@@ -1980,6 +1992,204 @@ function novaTick(dt){
   novaApply(_nvClamp(novaT/NOVA_DUR,0,1));
   novaFrameCamera(dt);
   _nvUiAccum += dt; if (_nvUiAccum>0.1){ _nvUiAccum=0; novaUpdateUI(); }
+  // A live export auto-saves the moment the full time-lapse completes.
+  if (novaRec && !novaRec.finishing && !novaPlaying && novaT>=NOVA_DUR){
+    novaRec.finishing = true;
+    setTimeout(()=>{ novaRecStop(true); }, 450);   // small tail so the final frame lands
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Sun's End — MP4 export
+   Records the cinematic to a downloadable video in two flavours:
+     • Scene only            — the bare 3D render (canvas capture stream).
+     • Scene + on-screen cards — the render composited with whatever HUD cards
+                                 are open (Coordinates, NAVLINQ, Flights, …).
+   Recording always begins from the user's current camera POV and plays the
+   full stellar-death timeline once, saving automatically when it finishes.
+   MP4 is preferred; if the browser can only record WebM we fall back to that
+   and say so plainly. Text-only cards keep the capture canvas untainted, so
+   the stream stays exportable. Video-only (no audio) by design.
+   ------------------------------------------------------------------------- */
+function novaPickVideoMime(){
+  if (typeof MediaRecorder==='undefined' || !MediaRecorder.isTypeSupported) return null;
+  const want = [
+    'video/mp4;codecs=avc1.640028',
+    'video/mp4;codecs=avc1.42E01E',
+    'video/mp4;codecs=avc1',
+    'video/mp4',
+    'video/webm;codecs=vp9',
+    'video/webm;codecs=vp8',
+    'video/webm'
+  ];
+  for (const t of want){ try{ if (MediaRecorder.isTypeSupported(t)) return t; }catch(_){} }
+  return '';   // supported, but no known type matched → let the browser default
+}
+
+function novaExportMenu(){
+  if (novaRec){ novaRecStop(true); return; }    // clicking ● Stop finishes + saves
+  if (!novaOn || !root) return;
+  const host = root.querySelector('#stNovaBar'); if (!host) return;
+  const existing = root.querySelector('#stNovaExpMenu');
+  if (existing){ existing.remove(); return; }    // toggle the chooser off
+  const m = document.createElement('div');
+  m.id='stNovaExpMenu'; m.className='nv-menu';
+  m.innerHTML =
+    `<button data-m="scene">\ud83c\udfac Scene only</button>`+
+    `<button data-m="cards">\ud83d\uddc2 Scene + on-screen cards</button>`;
+  host.appendChild(m);
+  m.addEventListener('click', e=>{
+    const b=e.target.closest('button'); if(!b) return;
+    const mode=b.getAttribute('data-m'); m.remove(); novaRecStart(mode);
+  });
+  setTimeout(()=>{
+    const off=(ev)=>{
+      if (!m.contains(ev.target) && ev.target.id!=='stNovaExport'){
+        m.remove(); document.removeEventListener('pointerdown', off, true);
+      }
+    };
+    document.addEventListener('pointerdown', off, true);
+  }, 0);
+}
+
+function novaRecStart(mode){
+  if (novaRec || !novaOn || !renderer) return;
+  const mime = novaPickVideoMime();
+  if (mime===null){ toast('Video export is not supported in this browser'); return; }
+  const gl = renderer.domElement;
+  const srcW = gl.width || gl.clientWidth, srcH = gl.height || gl.clientHeight;
+  if (!srcW || !srcH){ toast('Nothing to record yet — try again in a moment'); return; }
+  const capW = Math.min(1920, srcW), capH = Math.max(2, Math.round(capW * srcH/srcW));
+
+  let stream;
+  if (mode==='cards'){
+    const cap = document.createElement('canvas'); cap.width=capW; cap.height=capH;
+    const cctx = cap.getContext('2d', { alpha:false });
+    cctx.fillStyle='#05060d'; cctx.fillRect(0,0,capW,capH);
+    novaRecComp = { canvas:cap, ctx:cctx, capW, capH, overlay:null, building:false, lastBuild:0 };
+    stream = cap.captureStream(30);
+  } else {
+    try{ stream = gl.captureStream(30); }
+    catch(_){ toast('This browser blocked canvas capture — cannot export'); return; }
+  }
+
+  const chunks = [];
+  let rec;
+  try{
+    rec = mime ? new MediaRecorder(stream, { mimeType:mime, videoBitsPerSecond:8_000_000 })
+               : new MediaRecorder(stream);
+  }catch(_){
+    try{ rec = new MediaRecorder(stream); }
+    catch(e2){ toast('Could not start the video recorder'); novaRecComp=null; return; }
+  }
+  const ext = ((rec.mimeType||mime||'').indexOf('mp4')>=0) ? 'mp4' : 'webm';
+
+  rec.ondataavailable = e=>{ if (e.data && e.data.size) chunks.push(e.data); };
+  rec.onstop = ()=>{
+    const save = !!(novaRec && novaRec.save);
+    novaRecComp = null; novaRec = null;
+    _novaRecRestoreUI();
+    if (!save){ toast('Export cancelled'); return; }
+    if (!chunks.length){ toast('Recording produced no data'); return; }
+    const blob = new Blob(chunks, { type: chunks[0].type || mime || 'video/mp4' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const ts = new Date().toISOString().replace(/[-:]/g,'').replace('T','-').slice(0,15);
+    a.href=url; a.download=`EWI-Cosmos-Suns-End-${mode==='cards'?'with-cards':'scene'}-${ts}.${ext}`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>{ try{ URL.revokeObjectURL(url); }catch(_){} }, 5000);
+    toast(ext==='mp4'
+      ? 'Saved your Sun\u2019s End cinematic (MP4)'
+      : 'Saved your Sun\u2019s End cinematic (WebM \u2014 this browser can\u2019t record MP4)');
+  };
+  rec.onerror = ()=>{ novaRecComp=null; novaRec=null; _novaRecRestoreUI(); toast('Recording error \u2014 export stopped'); };
+
+  novaRec = { rec, mode, save:false, finishing:false };
+  // Begin from the user's current POV; hold it briefly before the auto-director
+  // eases in to keep the growing envelope framed.
+  novaT=0; novaPlaying=true; novaApply(0); novaUpdateUI();
+  cineLastInput = performance.now();
+  _novaRecSetUI(true);
+  try{ rec.start(100); }catch(_){ try{ rec.start(); }catch(e3){ novaRecComp=null; novaRec=null; _novaRecRestoreUI(); toast('Could not start the video recorder'); return; } }
+  toast(mode==='cards'
+    ? 'Recording Sun\u2019s End with your on-screen cards \u2014 it saves automatically when the time-lapse ends'
+    : 'Recording Sun\u2019s End \u2014 it saves automatically when the time-lapse ends');
+}
+
+function novaRecStop(save){
+  if (!novaRec) return;
+  novaRec.save = !!save;
+  try{ novaRec.rec.stop(); }
+  catch(_){ novaRecComp=null; novaRec=null; _novaRecRestoreUI(); }
+}
+
+function _novaRecSetUI(on){
+  if (!root) return;
+  const b = root.querySelector('#stNovaExport');
+  if (b){
+    b.classList.toggle('nv-rec', on);
+    b.textContent = on ? '\u25cf Stop' : '\u2913 MP4';
+    b.title = on ? 'Stop and save the recording now' : 'Export this Sun\u2019s End as an MP4 video';
+  }
+  ['#stNovaScrub','#stNovaPlay','#stNovaReplay'].forEach(sel=>{
+    const el = root.querySelector(sel); if (el) el.disabled = on;
+  });
+}
+function _novaRecRestoreUI(){ _novaRecSetUI(false); }
+
+// Per-frame composite for the "scene + cards" export — called from animate()
+// right after renderer.render() (while the WebGL back-buffer is still valid,
+// since preserveDrawingBuffer is off). Draws the fresh 3D frame, then the
+// cached HUD-card bitmap on top; the bitmap is re-rasterised a few times a
+// second from the live DOM so text and positions stay current without stalling.
+function novaRecComposite(){
+  const c = novaRecComp; if (!c) return;
+  try{
+    c.ctx.drawImage(renderer.domElement, 0,0, c.capW, c.capH);
+    if (c.overlay) c.ctx.drawImage(c.overlay, 0,0, c.capW, c.capH);
+    const now = performance.now();
+    if (!c.building && now-c.lastBuild>280){ c.lastBuild=now; novaRecBuildOverlay(c); }
+  }catch(_){}
+}
+
+// Rasterise the currently-visible HUD cards to an <img> via an SVG
+// <foreignObject>. The studio stylesheet is embedded (CDATA-wrapped so CSS
+// punctuation can't break the XML) and each card is XML-serialised so void
+// elements like <input> come out well-formed — without that, the whole SVG
+// fails to decode and the overlay silently vanishes. The wrapper background is
+// forced transparent so only the cards paint over the scene. Text/emoji only →
+// no cross-origin pixels → the capture canvas stays untainted.
+function novaRecBuildOverlay(c){
+  try{
+    const panels = [].slice.call(document.querySelectorAll('#studioRoot .dn-panel.on'));
+    if (!panels.length){ c.overlay=null; return; }
+    const W = window.innerWidth, H = window.innerHeight;
+    const css = ((document.getElementById('studio-css')||{}).textContent || '').replace(/]]>/g, ']]]]><![CDATA[>');
+    const ser = new XMLSerializer();
+    let inner = '';
+    for (const p of panels){
+      const r = p.getBoundingClientRect();
+      if (r.width<2 || r.height<2) continue;
+      const clone = p.cloneNode(true);
+      clone.style.left = Math.round(r.left)+'px';
+      clone.style.top  = Math.round(r.top)+'px';
+      clone.style.margin = '0';
+      try{ inner += ser.serializeToString(clone); }catch(_){}
+    }
+    if (!inner){ c.overlay=null; return; }
+    const svg =
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${c.capW}" height="${c.capH}" viewBox="0 0 ${W} ${H}">`+
+      `<foreignObject x="0" y="0" width="${W}" height="${H}">`+
+      `<div xmlns="http://www.w3.org/1999/xhtml" id="studioRoot" class="on" `+
+        `style="position:absolute;inset:0;background:transparent;display:block;overflow:hidden">`+
+      `<style><![CDATA[${css}]]></style>${inner}</div>`+
+      `</foreignObject></svg>`;
+    c.building = true;
+    const img = new Image();
+    img.onload  = ()=>{ c.overlay=img; c.building=false; };
+    img.onerror = ()=>{ c.building=false; };
+    img.src = 'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
+  }catch(_){ c.building=false; }
 }
 
 /* ---------------------------------------------------------------------------
