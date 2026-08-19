@@ -202,8 +202,22 @@ let clock;
 let root, canvasWrap, objListEl, inspectorEl, eventNoteEl, dateInput, speedInput, playBtn, camBtnExp, camBtnCine;
 const planetMeshes = {};                    // key → { group, mesh, spin, orbitLine }
 let moon;                                    // { pivot, mesh }
-let sun, sunLight;
+let sun, sunLight, sunGlow;
 let asteroidBelt, meteorSys = null;
+// "Sun's End" cinematic playback — an independent, scripted stellar-death time-lapse
+// (red giant → planetary nebula → white dwarf). Distinct from Explore/Cinematic
+// camera modes and from the 2D/3D render switch; toggled on/off at any moment.
+let novaOn = false, novaPlaying = false, novaT = 0;
+const NOVA_DUR = 54;                          // seconds of wall-clock for the full time-lapse
+let novaShell = null;                          // expanding planetary-nebula ejecta shell
+let _novaSaved = null;                         // saved scene state for a clean restore
+let novaBar = null, novaFlashEl = null;        // control "screen" + climax flash overlay
+// Remember the last render view (2D sandbox vs 3D studio) on this device, so a
+// refresh / reopened tab restores exactly where the user left off.
+const VIEW_KEY = 'ewi-cosmos-view';            // localStorage: '2d' | '3d'
+let _restoringView = false;                    // true while auto-restoring (suppresses the opening toast)
+function saveView(v){ try{ localStorage.setItem(VIEW_KEY, v); }catch(e){} }
+function readView(){ try{ return localStorage.getItem(VIEW_KEY); }catch(e){ return null; } }
 const imported = [];                         // { id, name, type, object3d, extra }
 let selected = null;
 let simDate = new Date('2026-08-17T00:00:00Z');
@@ -223,7 +237,10 @@ let navMode = false;
 const navSel = new Set();                     // planet keys
 let navGroup = null;                          // THREE.Group: links + midpoint marker
 let navMidMarker = null;                      // invisible pick proxy at the midpoint → click to focus/fly there
+let navOffsetMarker = null;                   // invisible pick proxy on the teal offset (centre→barycenter) line
 let navFlyEngaged = false;                    // true while a fly-to-midpoint is engaged (button is a toggle)
+let navLocked = false;                        // true → selection frozen; navigate freely without disturbing the midpoint
+let navBadgeMode = 'readout';                 // 'readout' | 'offset' — which explainer the badge card shows
 // Slide / truck camera mode: dragging (or a one-finger/trackpad gesture) moves
 // the focal point (orbit.target) freely to a new X·Y·Z in space, decoupled from
 // the currently-focused body — press G to toggle (tap the ✥ Slide button too).
@@ -299,7 +316,10 @@ function injectCSS(){
     border:1px solid rgba(255,255,255,.14);border-radius:10px;padding:8px 14px;font-size:12.5px;opacity:0;transition:opacity .2s;pointer-events:none}
   .st-toast.show{opacity:1}
   .st-badge{position:absolute;left:50%;transform:translateX(-50%);bottom:64px;z-index:6;background:rgba(124,92,255,.16);border:1px solid rgba(124,92,255,.5);
-    border-radius:12px;padding:9px 14px;font-size:12px;max-width:min(440px,86vw);text-align:center;display:none}
+    border-radius:12px;padding:9px 14px;font-size:12px;max-width:min(440px,86vw);max-height:min(46vh,360px);overflow-y:auto;overscroll-behavior:contain;text-align:center;display:none}
+  .st-badge::-webkit-scrollbar{width:9px}
+  .st-badge::-webkit-scrollbar-thumb{background:rgba(124,92,255,.5);border-radius:8px}
+  .st-badge::-webkit-scrollbar-track{background:transparent}
   .st-home{display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 12px 0 8px;border-radius:9px;
     border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.04);color:#e8ecf6;font-weight:700;
     font-size:12.5px;text-decoration:none;white-space:nowrap;transition:background .15s,border-color .15s}
@@ -314,6 +334,30 @@ function injectCSS(){
   .st-cine button:hover{background:rgba(124,92,255,.18);border-color:rgba(124,92,255,.5)}
   .st-cine button.on{background:linear-gradient(180deg,#7c5cff,#5a3fd6);border-color:transparent;color:#fff}
   .st-cine .nm{font-size:12px;color:#c6cde0;min-width:98px;text-align:center;font-weight:600}
+  /* Sun's End — independent stellar-death playback */
+  .st-btn#stNova.on{background:linear-gradient(180deg,#ff8a3c,#e0431f);border-color:transparent;color:#fff;
+    box-shadow:0 0 0 1px rgba(255,138,60,.5),0 6px 18px rgba(224,67,31,.35)}
+  .st-nova{position:absolute;left:50%;bottom:112px;transform:translateX(-50%);z-index:8;display:none;
+    flex-direction:column;gap:8px;width:min(560px,92vw);padding:12px 14px;border-radius:14px;
+    background:rgba(14,12,20,.9);backdrop-filter:blur(12px);border:1px solid rgba(255,138,60,.42);
+    box-shadow:0 10px 34px rgba(0,0,0,.5)}
+  .st-nova.on{display:flex}
+  .st-nova .nv-top{display:flex;align-items:center;gap:10px}
+  .st-nova .nv-title{font-weight:800;font-size:13px;color:#ffd9b8;letter-spacing:.2px;white-space:nowrap}
+  .st-nova .nv-time{font-size:11.5px;color:#9aa3bd;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .st-nova .nv-spacer{flex:1}
+  .st-nova .nv-scrub{-webkit-appearance:none;appearance:none;width:100%;height:6px;border-radius:6px;cursor:pointer;
+    background:linear-gradient(90deg,#ff8a3c 0%,#e0431f var(--nvp,0%),rgba(255,255,255,.14) var(--nvp,0%))}
+  .st-nova .nv-scrub::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;border-radius:50%;
+    background:#fff;border:2px solid #e0431f;cursor:pointer;box-shadow:0 1px 5px rgba(0,0,0,.4)}
+  .st-nova .nv-scrub::-moz-range-thumb{width:15px;height:15px;border-radius:50%;background:#fff;border:2px solid #e0431f;cursor:pointer}
+  .st-nova .nv-note{font-size:11px;line-height:1.5;color:#c6cde0}
+  .st-nova .nv-note b{color:#ffd9b8}
+  .st-nova button{appearance:none;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.05);color:#e8ecf6;
+    height:30px;min-width:32px;padding:0 12px;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;
+    display:inline-flex;align-items:center;justify-content:center;gap:6px;transition:background .15s,border-color .15s}
+  .st-nova button:hover{background:rgba(255,138,60,.2);border-color:rgba(255,138,60,.55)}
+  .st-nova-flash{position:absolute;inset:0;z-index:7;pointer-events:none;opacity:0;background:radial-gradient(circle at 50% 50%,#fff 0%,#ffd9a0 38%,rgba(255,180,110,0) 72%)}
   @media (max-width:820px){
     .st-panel{width:44vw;max-width:250px;top:60px;bottom:120px}
     .st-hint{display:none}
@@ -343,7 +387,10 @@ function injectCSS(){
   .dn-x{width:22px;height:22px;border-radius:6px;border:0;background:rgba(255,255,255,.06);color:#c6cde0;
     font-size:13px;cursor:pointer;flex:none}
   .dn-x:hover{background:rgba(255,90,90,.3)}
-  .dn-body{padding:11px 12px;font-size:12.5px}
+  .dn-body{padding:11px 12px;font-size:12.5px;max-height:min(64vh,560px);overflow-y:auto;overscroll-behavior:contain}
+  .dn-body::-webkit-scrollbar{width:9px}
+  .dn-body::-webkit-scrollbar-thumb{background:rgba(124,92,255,.45);border-radius:8px}
+  .dn-body::-webkit-scrollbar-track{background:transparent}
   .dn-body label{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:#9aa3bd;margin:0 0 4px}
   .dn-in{width:100%;box-sizing:border-box;background:rgba(0,0,0,.36);border:1px solid rgba(255,255,255,.14);
     color:#fff;border-radius:9px;padding:8px 10px;font-size:13px;font-variant-numeric:tabular-nums;outline:none}
@@ -378,7 +425,13 @@ function injectCSS(){
   .nv-chip:hover{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.22)}
   .nv-chip.sel{background:rgba(124,92,255,.28);border-color:#7c5cff;color:#fff;box-shadow:0 0 0 1px rgba(124,92,255,.4) inset}
   .nv-sec{font:700 11px -apple-system,system-ui,sans-serif;color:#c6cde0;margin:9px 0 4px;letter-spacing:.02em}
-  .nv-scrollx{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:2px 0}
+  .nv-scrollx{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:2px 0;scrollbar-width:thin;scrollbar-color:rgba(124,92,255,.6) transparent;cursor:grab}
+  .nv-scrollx:active{cursor:grabbing}
+  .nv-scrollx::-webkit-scrollbar{height:10px}
+  .nv-scrollx::-webkit-scrollbar-thumb{background:rgba(124,92,255,.6);border-radius:8px}
+  .nv-scrollx::-webkit-scrollbar-track{background:rgba(255,255,255,.05);border-radius:8px}
+  .nv-scrollhint{font:600 9.5px -apple-system,system-ui,sans-serif;color:#8892ac;margin:1px 0 3px;display:flex;align-items:center;gap:4px}
+  .nv-scrollhint::before{content:"\\2194";color:#7c5cff;font-size:12px}
   .nv-tbl{width:100%;border-collapse:collapse;font:600 10.5px -apple-system,system-ui,sans-serif;color:#dfe4f2}
   .nv-tbl th,.nv-tbl td{padding:4px 7px;text-align:right;white-space:nowrap;border-bottom:1px solid rgba(255,255,255,.07)}
   .nv-tbl th:first-child,.nv-tbl td:first-child{text-align:left}
@@ -407,6 +460,7 @@ function buildDOM(){
         <button class="st-btn on" id="stExplore" title="Orbit / pan / zoom">🖱 <span class="lbl">Explore</span></button>
         <button class="st-btn" id="stCine" title="Auto-directed cinematic camera">🎬 <span class="lbl">Cinematic</span></button>
       </div>
+      <button class="st-btn" id="stNova" title="Sun's End — play a cinematic, sped-up time-lapse of the Sun's death (red giant → planetary nebula → white dwarf). Click to start or stop; drag to change your view while it plays." aria-pressed="false">☀ <span class="lbl">Sun's&nbsp;End</span></button>
       <div class="grow"></div>
       <button class="st-btn ghost" id="stAdd" title="Add a primitive">＋ <span class="lbl">Add</span></button>
       <button class="st-btn ghost" id="stImport" title="Import a model, image, video, or audio">⬆ <span class="lbl">Import</span></button>
@@ -453,6 +507,20 @@ function buildDOM(){
       <button id="stCineFocus" title="Focus the selected body (or nearest body)">◎ Focus</button>
     </div>
 
+    <div class="st-nova-flash" id="stNovaFlash"></div>
+    <div class="st-nova" id="stNovaBar">
+      <div class="nv-top">
+        <span class="nv-title">☀ Sun's End</span>
+        <span class="nv-time" id="stNovaPhase">Main sequence · the Sun today</span>
+        <span class="nv-spacer"></span>
+        <button id="stNovaPlay" title="Pause / resume playback">⏸</button>
+        <button id="stNovaReplay" title="Replay from the beginning">↺</button>
+        <button id="stNovaExit" title="Exit — return to the normal 3D view">✕</button>
+      </div>
+      <input type="range" class="nv-scrub" id="stNovaScrub" min="0" max="1000" value="0" step="1" aria-label="Scrub the time-lapse" />
+      <div class="nv-note" id="stNovaNote"></div>
+    </div>
+
     <div class="st-time">
       <input type="date" id="stDate" value="2026-08-17" aria-label="Simulation date" />
       <button class="st-btn" id="stPlay" title="Play / pause">⏸</button>
@@ -489,6 +557,8 @@ function buildDOM(){
   playBtn     = root.querySelector('#stPlay');
   camBtnExp   = root.querySelector('#stExplore');
   camBtnCine  = root.querySelector('#stCine');
+  novaBar     = root.querySelector('#stNovaBar');
+  novaFlashEl = root.querySelector('#stNovaFlash');
 
   // event dropdown — grouped by category
   const sel = root.querySelector('#stEvent');
@@ -508,6 +578,12 @@ function buildDOM(){
   root.querySelector('#stCinePrev').addEventListener('click', ()=>cineStep(-1));
   root.querySelector('#stCineNext').addEventListener('click', ()=>cineStep(1));
   root.querySelector('#stCineFocus').addEventListener('click', cineFocusSelected);
+  // Sun's End — independent stellar-death time-lapse (toggle on/off at any time)
+  root.querySelector('#stNova').addEventListener('click', ()=>novaToggle());
+  root.querySelector('#stNovaPlay').addEventListener('click', novaTogglePlay);
+  root.querySelector('#stNovaReplay').addEventListener('click', novaReplay);
+  root.querySelector('#stNovaExit').addEventListener('click', ()=>novaExit());
+  root.querySelector('#stNovaScrub').addEventListener('input', e=>novaSeek((+e.target.value)/1000));
   root.querySelector('#stAdd').addEventListener('click', addPrimitiveMenu);
   root.querySelector('#stImport').addEventListener('click', ()=>root.querySelector('#stFile').click());
   root.querySelector('#stFile').addEventListener('change', e=>{ handleFiles(e.target.files); e.target.value=''; });
@@ -604,6 +680,7 @@ function buildScene(){
   const glow = new THREE.Mesh(new THREE.SphereGeometry(4.4,32,32),
     new THREE.MeshBasicMaterial({ color:0xffb020, transparent:true, opacity:0.14 }));
   sun.add(glow);
+  sunGlow = glow;
 
   // planets
   for (const p of PLANETS) buildPlanet(p);
@@ -1069,7 +1146,7 @@ function animate(){
     const _povFly = !!(dnFlightSim && dnFlightSim.povOn);
     dnWorldSlow += ((_povFly ? 0.10 : 1) - dnWorldSlow) * Math.min(1, dt*2.4);
 
-    if (playing){
+    if (playing && !novaOn){
       simDate = new Date(simDate.getTime() + timeScale*dt*DAY_MS*dnWorldSlow);
       updatePlanets();
     }
@@ -1084,7 +1161,8 @@ function animate(){
     if (navMode && navSel.size>=2){ _navAccum+=dt; if(_navAccum>0.1){ _navAccum=0; updateNav(); } }
 
     pollGamepad(dt);
-    if (camMode==='cinematic') tickCinematic(dt);
+    if (novaOn) novaTick(dt);
+    else if (camMode==='cinematic') tickCinematic(dt);
     tickDolly3D(dt);
     deepNavTick(dt);
     orbit.update();
@@ -1365,7 +1443,8 @@ function navReadoutHTML(R){
     return `<b>NAVLINQ · ${R.nodes.length} bodies · in-system</b><br>`+
       `<span style="color:#c6cde0">Barycenter: ecliptic λ ${p.lon.toFixed(2)}° · β ${p.lat.toFixed(2)}° · ${p.r.toFixed(4)} AU from the Sun</span><br>`+
       `<span style="color:#c6cde0">Centre → barycenter offset <b>${fmtKm(p.offKm)}</b> · node span ${p.span.toFixed(3)} AU</span><br>`+
-      `<span style="color:#9aa3bd;font-size:11px">Gravity pulls the midpoint ${fmtKm(p.offKm)} toward <b>${R.dom.name}</b> (${R.massPct.toFixed(1)}% of the set's mass). Mass-weighted 3-D barycenter — physically exact (established mechanics).</span>`+travel;
+      `<span style="color:#9aa3bd;font-size:11px">Gravity pulls the midpoint ${fmtKm(p.offKm)} toward <b>${R.dom.name}</b> (${R.massPct.toFixed(1)}% of the set's mass). Mass-weighted 3-D barycenter — physically exact (established mechanics).</span>`+
+      `<br><span style="color:#8892ac;font-size:10.5px">Tip: tap the teal pin on the dashed line to learn why it shows · use 🔒 Lock to orbit &amp; zoom without changing the set.</span>`+travel;
   }
   return `<b>NAVLINQ · ${R.nodes.length} nodes · interstellar</b><br>`+
     `<span style="color:#c6cde0">Barycenter bearing λ ${p.lon.toFixed(1)}° · β ${p.lat.toFixed(1)}° · ${p.r.toFixed(3)} ly from the Sun</span><br>`+
@@ -1479,6 +1558,21 @@ function navRefreshTravel(){
   const P = dnPanels.navlinq; if (!P) return;
   const el = P.body.querySelector('#nvTravel'); if (!el || !navTravelOpen) return;
   el.innerHTML = navTravelHTML(navComputeMidpoints());
+  navSetupScrollx(el);
+}
+// Show a "scroll sideways" affordance above any table that overflows the panel width.
+function navSetupScrollx(scope){
+  if (!scope) return;
+  scope.querySelectorAll('.nv-scrollx').forEach(sx=>{
+    const overflow = sx.scrollWidth > sx.clientWidth + 1;
+    let hint = sx.previousElementSibling;
+    if (!(hint && hint.classList && hint.classList.contains('nv-scrollhint'))){
+      hint = document.createElement('div'); hint.className = 'nv-scrollhint';
+      hint.textContent = 'drag or scroll sideways for more columns';
+      sx.parentNode.insertBefore(hint, sx);
+    }
+    hint.style.display = overflow ? 'flex' : 'none';
+  });
 }
 
 function toggleNavMode(){
@@ -1493,14 +1587,17 @@ function toggleNavMode(){
     toast('NAVLINQ — pick 2+ bodies (planets, Sun, Moon, or nearby stars) to link their gravity-weighted midpoint');
   } else {
     navSel.clear(); clearNav(); eventNoteEl.style.display='none';
+    navLocked=false; navBadgeMode='readout';
     if (dnPanels.navlinq) dnPanels.navlinq.close();
   }
 }
 function navToggleBody(id){
   if (!id) return;
+  if (navLocked){ toast('Selection locked — unlock to change the linked bodies'); return; }
   const ok = id==='sun' || id==='moon' || id.indexOf('star:')===0 || !!planetMeshes[id];
   if (!ok) return;
   if (navSel.has(id)) navSel.delete(id); else navSel.add(id);
+  navBadgeMode = 'readout';
   highlightNav();
   updateNav();
 }
@@ -1528,6 +1625,7 @@ function navBarycenterAU(jd){
 function clearNav(){
   if (navGroup){ scene.remove(navGroup); navGroup.traverse(o=>{ o.geometry&&o.geometry.dispose(); o.material&&o.material.dispose&&o.material.dispose(); }); navGroup=null; }
   navMidMarker = null;
+  navOffsetMarker = null;
 }
 function updateNav(){
   clearNav();
@@ -1565,10 +1663,25 @@ function updateNav(){
     const dl = new THREE.Line(new THREE.BufferGeometry().setFromPoints([ R.phys.cMarker.clone(), mid.clone() ]),
       new THREE.LineDashedMaterial({ color:0x4fd1c5, dashSize:0.25, gapSize:0.18, transparent:true, opacity:0.9 }));
     dl.computeLineDistances(); navGroup.add(dl);
+    // Clickable thumb-tack on the offset line (only when the offset is visually
+    // separated from the midpoint) — click it to learn WHY the line appears.
+    const sep = R.phys.cMarker.distanceTo(mid);
+    if (sep > 0.2){
+      const midOff = R.phys.cMarker.clone().add(mid).multiplyScalar(0.5);
+      const pinR = Math.max(0.12, mid.length()*0.012);
+      const pin = new THREE.Mesh(new THREE.OctahedronGeometry(pinR,0),
+        new THREE.MeshBasicMaterial({ color:0x4fd1c5, transparent:true, opacity:0.95 }));
+      pin.position.copy(midOff); navGroup.add(pin);
+      const opick = new THREE.Mesh(new THREE.SphereGeometry(Math.max(0.4, mid.length()*0.016),12,12),
+        new THREE.MeshBasicMaterial({ visible:false }));
+      opick.position.copy(midOff); opick.userData.navOffsetLine = true;
+      navGroup.add(opick); navOffsetMarker = opick;
+    }
   }
   scene.add(navGroup);
   eventNoteEl.style.display='block';
-  eventNoteEl.innerHTML = navReadoutHTML(R);
+  eventNoteEl.innerHTML = (navBadgeMode==='offset' && !R.anyStar && R.phys.cMarker && navOffsetMarker)
+    ? navOffsetHTML(R) : navReadoutHTML(R);
 }
 function navFlyToMidpoint(){
   // Toggle behaviour: if a fly-to-midpoint is already engaged, clicking again
@@ -1593,6 +1706,42 @@ function navUpdateFlyBtn(){
   b.setAttribute('aria-pressed', String(navFlyEngaged));
   b.textContent = navFlyEngaged ? 'Cancel fly ✕' : 'Fly to midpoint ▶';
 }
+// Lock the current selection: the midpoint set is frozen so orbiting, zooming,
+// rotating and panning the camera can never change it — the readout stays put.
+function navToggleLock(){
+  if (!navLocked && navSel.size < 2){ toast('Pick 2 or more bodies before locking the midpoint'); return; }
+  navLocked = !navLocked;
+  navUpdateLockBtn();
+  highlightNav();
+  toast(navLocked
+    ? 'Midpoint locked — orbit, zoom, rotate & pan freely; the selection stays put'
+    : 'Midpoint unlocked — click bodies to change the linked set');
+}
+function navUpdateLockBtn(){
+  const P = dnPanels.navlinq; if (!P) return;
+  const b = P.body.querySelector('#nvLock'); if (!b) return;
+  b.classList.toggle('on', navLocked);
+  b.setAttribute('aria-pressed', String(navLocked));
+  b.textContent = navLocked ? '🔒 Locked' : '🔓 Lock';
+  P.body.querySelectorAll('.nv-chip').forEach(c=>{
+    c.style.opacity = navLocked ? '.5' : '';
+    c.style.cursor  = navLocked ? 'not-allowed' : 'pointer';
+  });
+}
+// Explain the teal dashed line (centre → barycenter offset). Toggling switches the
+// badge card between the standard readout and this explainer; a module flag makes
+// the throttled updateNav keep whichever the user last chose.
+function navExplainOffset(){
+  navBadgeMode = (navBadgeMode === 'offset') ? 'readout' : 'offset';
+  updateNav();
+}
+function navOffsetHTML(R){
+  const p = R.phys;
+  return `<b style="color:#4fd1c5">Why the teal dashed line is here</b><br>`+
+    `<span style="color:#c6cde0">It measures the gap between the <b>geometric centre</b> (the plain average of the selected positions — the teal dot) and the <b>barycenter</b> (the mass-weighted midpoint — the violet marker).</span><br>`+
+    `<span style="color:#c6cde0">Because mass is uneven across your set, the balance point is pulled <b>${fmtKm(p.offKm)}</b> toward <b>${R.dom.name}</b> (${R.massPct.toFixed(1)}% of the set's mass). Give every body equal mass and the two points merge — the line disappears.</span><br>`+
+    `<span style="color:#8b93ad;font-size:11px">Established mechanics — barycenter = Σ(mᵢ·rᵢ) ÷ Σmᵢ, exact (&lt;0.1% error from measured masses). Tap the pin again to return to the readout; tap the violet marker to fly there.</span>`;
+}
 function buildNavlinqPanel(body){
   const chip=(id,label)=>`<button class="nv-chip" data-id="${id}">${label}</button>`;
   const inSys=[chip('sun','Sun')].concat(PLANETS.map(p=>chip(p.key,p.name)));
@@ -1602,12 +1751,33 @@ function buildNavlinqPanel(body){
     <div class="nv-grp-lbl">In-system</div><div class="nv-wrap">${inSys.join('')}</div>
     <div class="nv-grp-lbl">Interstellar · real distances</div><div class="nv-wrap">${stars.join('')}</div>
     <div class="dn-read" id="nvOut" style="margin-top:8px">Select 2 or more bodies to compute a midpoint.</div>
-    <div class="dn-rowbtn"><button class="dn-mini" id="nvClear">Clear</button><button class="dn-mini" id="nvTravelBtn">Interplanetary travel ▾</button><button class="dn-mini" id="nvFly" style="margin-left:auto">Fly to midpoint ▶</button></div>
+    <div class="dn-rowbtn"><button class="dn-mini" id="nvClear">Clear</button><button class="dn-mini" id="nvLock" aria-pressed="false" title="Lock the selected bodies so orbiting, zooming, rotating & panning never change the midpoint">🔓 Lock</button><button class="dn-mini" id="nvTravelBtn">Interplanetary travel ▾</button><button class="dn-mini" id="nvFly" style="margin-left:auto">Fly to midpoint ▶</button></div>
     <div id="nvTravel" class="nv-travel" style="display:none"></div>`;
   body.querySelectorAll('.nv-chip').forEach(c=>c.addEventListener('click', ()=>navToggleBody(c.dataset.id)));
-  body.querySelector('#nvClear').addEventListener('click', ()=>{ navSel.clear(); clearNav(); highlightNav(); navRefreshPanel(null); navRefreshTravel(); if (dnFlight && dnFlight.tag==='navmid') dnFlight.active=false; navFlyEngaged=false; navUpdateFlyBtn(); });
+  body.querySelector('#nvClear').addEventListener('click', ()=>{ if (navLocked){ toast('Unlock the selection first to clear it'); return; } navSel.clear(); clearNav(); highlightNav(); navRefreshPanel(null); navRefreshTravel(); if (dnFlight && dnFlight.tag==='navmid') dnFlight.active=false; navFlyEngaged=false; navUpdateFlyBtn(); });
+  body.querySelector('#nvLock').addEventListener('click', navToggleLock);
   body.querySelector('#nvFly').addEventListener('click', navFlyToMidpoint);
-  navUpdateFlyBtn();
+  navUpdateFlyBtn(); navUpdateLockBtn();
+  // Horizontal scroll for the wide physics tables: the panel is only 268 px, so
+  // translate vertical wheel intent into sideways motion and support click-drag
+  // panning. Delegated on #nvTravel because its innerHTML is rebuilt on refresh.
+  const travelEl = body.querySelector('#nvTravel');
+  travelEl.addEventListener('wheel', (e)=>{
+    const sx = e.target.closest('.nv-scrollx'); if (!sx) return;
+    if (sx.scrollWidth <= sx.clientWidth + 1) return;
+    const delta = Math.abs(e.deltaY) > Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+    const atStart = sx.scrollLeft <= 0, atEnd = sx.scrollLeft >= sx.scrollWidth - sx.clientWidth - 1;
+    if ((delta < 0 && !atStart) || (delta > 0 && !atEnd)){ sx.scrollLeft += delta; e.preventDefault(); }
+  }, { passive:false });
+  let dragSx=null, dragX=0, dragL=0;
+  travelEl.addEventListener('pointerdown', (e)=>{
+    const sx = e.target.closest('.nv-scrollx'); if (!sx || sx.scrollWidth <= sx.clientWidth + 1) return;
+    dragSx=sx; dragX=e.clientX; dragL=sx.scrollLeft; try{ sx.setPointerCapture(e.pointerId); }catch(_){} sx.classList.add('drag');
+  });
+  travelEl.addEventListener('pointermove', (e)=>{ if (dragSx) dragSx.scrollLeft = dragL - (e.clientX - dragX); });
+  const endDrag=(e)=>{ if (dragSx){ try{ dragSx.releasePointerCapture(e.pointerId); }catch(_){} dragSx.classList.remove('drag'); dragSx=null; } };
+  travelEl.addEventListener('pointerup', endDrag);
+  travelEl.addEventListener('pointercancel', endDrag);
   body.querySelector('#nvTravelBtn').addEventListener('click', ()=>{
     navTravelOpen = !navTravelOpen;
     const el = body.querySelector('#nvTravel'), btn = body.querySelector('#nvTravelBtn');
@@ -1649,6 +1819,167 @@ function updateLocalClock(){
   const el = root && root.querySelector('#stLocal'); if (!el) return;
   const now = new Date();
   el.textContent = now.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+}
+
+/* ---------------------------------------------------------------------------
+   5b.  "Sun's End" — an independent, scripted stellar-death time-lapse
+   ---------------------------------------------------------------------------
+   A pre-generated, cinematic "video" of the Sun's far-future death, playable at
+   any moment and fully separate from the Explore/Cinematic camera modes and the
+   2D/3D render switch. The Sun swells into a red giant, its photosphere engulfs
+   Mercury → Venus → Earth → the inner system, then the outer envelope is cast
+   off as a planetary nebula that sweeps the rest of the system, leaving a white
+   dwarf. Deterministic per-fraction so it can be scrubbed, paused, resumed and
+   replayed. The camera auto-directs but yields instantly to the user, so the
+   viewer can change angles while it plays (as in Cinematic mode / a Director
+   camera). Calibrated confidence: a 1 M☉ star does NOT go supernova — this is a
+   faithful red-giant → planetary-nebula → white-dwarf sequence, dramatised. */
+const _nvColA = new THREE.Color();
+const _nvColB = new THREE.Color();
+const _nvZero = new THREE.Vector3(0,0,0);
+let _nvUiAccum = 0;
+const NOVA_NOTE = 'A <b>1 M☉</b> star like the Sun ends as a <b>red giant → planetary nebula → white dwarf</b> — it does <b>not</b> go supernova (that needs ≳ 8 solar masses). This is a stylised, sped-up dramatisation: the swelling photosphere engulfs Mercury, Venus, Earth and beyond, then the ejected envelope sweeps the outer system. Timings are rounded stellar-evolution estimates. <b>Drag anytime</b> to change your view while it plays.';
+
+function _nvClamp(x,a,b){ return x<a?a:(x>b?b:x); }
+function _nvLerp(a,b,t){ return a+(b-a)*t; }
+function _nvEase(t){ t=_nvClamp(t,0,1); return t*t*(3-2*t); }          // smoothstep
+function _nvEaseOut(t){ t=_nvClamp(t,0,1); return 1-(1-t)*(1-t); }
+
+// Visible photosphere scale, in multiples of the Sun's base scene radius (3 units).
+function novaScaleAt(f){
+  if (f < 0.12) return _nvLerp(1, 1.18, f/0.12);
+  if (f < 0.30) return _nvLerp(1.18, 3.0, _nvEase((f-0.12)/0.18));
+  if (f < 0.62) return _nvLerp(3.0, 6.4, _nvEase((f-0.30)/0.32));      // red-giant swell (× 3 → ~19 scene units)
+  if (f < 0.74){ const u=(f-0.62)/0.12; return _nvLerp(6.4,7.6,u) + Math.sin(u*Math.PI*6)*0.55*u; } // thermal pulses
+  if (f < 0.86){ const u=(f-0.74)/0.12; return _nvLerp(7.6, 0.55, _nvEase(u)); }  // envelope cast off, core collapses
+  return 0.28;                                                          // white-dwarf remnant
+}
+// Monotonically-increasing swept radius (scene units) → deterministic engulfment
+// that never "resurrects" a consumed planet as the visible core later collapses.
+function novaReach(f){
+  if (f < 0.30) return 3*novaScaleAt(f);
+  if (f < 0.62) return _nvLerp(9.0, 19.2, _nvEase((f-0.30)/0.32));
+  if (f < 0.74) return _nvLerp(19.2, 22.8, (f-0.62)/0.12);
+  const u=(f-0.74)/0.26; return _nvLerp(22.8, 40, _nvEaseOut(u));       // nebula shell sweeps the outer system
+}
+function novaPhase(f){
+  if (f<0.12) return { t:'Main sequence · the Sun today',                       yr:'now' };
+  if (f<0.30) return { t:'Subgiant · core hydrogen exhausted',                  yr:'≈ +5 billion yr' };
+  if (f<0.62) return { t:'Red giant · swelling past the inner planets',         yr:'≈ +7 billion yr' };
+  if (f<0.74) return { t:'Helium flash & thermal pulses',                       yr:'≈ +7.6 billion yr' };
+  if (f<0.86) return { t:'Planetary nebula · the envelope is cast off',         yr:'≈ +7.7 billion yr' };
+  return       { t:'White dwarf · the cooling stellar remnant',                 yr:'≈ +7.8 billion yr →' };
+}
+// Star surface / light / corona look across the sequence.
+function novaApplyLook(f){
+  let col, inten, glowO, glowHex=0xffb020;
+  if (f < 0.12){ col=_nvColA.setHex(0xffcf6b); inten=_nvLerp(3.2,3.8,f/0.12); glowO=0.14; }
+  else if (f < 0.30){ const u=_nvEase((f-0.12)/0.18);
+    col=_nvColA.setHex(0xffcf6b).lerp(_nvColB.setHex(0xffa64d),u); inten=_nvLerp(3.8,4.8,u); glowO=_nvLerp(0.14,0.24,u); glowHex=0xffa64d; }
+  else if (f < 0.62){ const u=_nvEase((f-0.30)/0.32);
+    col=_nvColA.setHex(0xffa64d).lerp(_nvColB.setHex(0xff5a2a),u); inten=_nvLerp(4.8,5.6,u); glowO=_nvLerp(0.24,0.44,u); glowHex=0xff5a2a; }
+  else if (f < 0.74){ const u=(f-0.62)/0.12; const throb=0.5+0.5*Math.sin(u*Math.PI*6);
+    col=_nvColA.setHex(0xff4a24).lerp(_nvColB.setHex(0xffb84a),throb*0.5); inten=_nvLerp(5.6,6.6,u)+throb*0.6; glowO=_nvLerp(0.44,0.5,u); glowHex=0xff5a2a; }
+  else if (f < 0.86){ const u=_nvEase((f-0.74)/0.12);                     // envelope ejection: bright flash → dim
+    col=_nvColA.setHex(0xffffff).lerp(_nvColB.setHex(0xbcd6ff),u); inten=_nvLerp(9.0,1.6,u); glowO=_nvLerp(0.5,0.08,u); glowHex=0xffe0b0; }
+  else { col=_nvColA.setHex(0xcfe3ff); inten=1.2; glowO=0.06; glowHex=0xbcd6ff; } // white dwarf
+  if (sun) sun.material.color.copy(col);
+  if (sunLight){ sunLight.intensity=inten; sunLight.color.copy(col); }
+  if (sunGlow){ sunGlow.material.opacity=glowO; sunGlow.material.color.setHex(glowHex); }
+}
+function novaEnsureShell(){
+  if (novaShell || !scene) return;
+  novaShell = new THREE.Mesh(
+    new THREE.SphereGeometry(1,48,32),
+    new THREE.MeshBasicMaterial({ color:0xff884a, transparent:true, opacity:0, side:THREE.BackSide,
+      blending:THREE.AdditiveBlending, depthWrite:false })
+  );
+  novaShell.visible=false; novaShell.renderOrder=2; scene.add(novaShell);
+}
+// Deterministic — the entire tableau is a pure function of the timeline fraction f.
+function novaApply(f){
+  f=_nvClamp(f,0,1);
+  if (sun) sun.scale.setScalar(novaScaleAt(f));
+  novaApplyLook(f);
+  const reach=novaReach(f);
+  if (novaShell){
+    if (f>=0.72){ const u=(f-0.72)/0.28; const rr=_nvLerp(7,40,_nvEaseOut(u));
+      novaShell.visible=true; novaShell.scale.setScalar(rr);
+      const op=(u<0.16)?(u/0.16*0.42):Math.max(0,_nvLerp(0.42,0,_nvEaseOut((u-0.16)/0.84)));
+      novaShell.material.opacity=op;
+    } else novaShell.visible=false;
+  }
+  for (const p of PLANETS){ const rec=planetMeshes[p.key]; if(!rec) continue;
+    const gone = rec.group.position.length() <= reach;
+    rec.group.visible=!gone; if(rec.orbitLine) rec.orbitLine.visible=!gone;
+  }
+  if (asteroidBelt) asteroidBelt.visible=(reach<9.8);
+  if (novaFlashEl){ const fl=(f>=0.735&&f<0.82)?Math.max(0,1-Math.abs(f-0.755)/0.05):0; novaFlashEl.style.opacity=(fl*0.85).toFixed(3); }
+}
+// Auto-directed establishing camera that pulls back to keep the growing envelope
+// framed — but yields the instant the user orbits/zooms/pans (like Cinematic mode).
+function novaFrameCamera(dt){
+  if (performance.now()-cineLastInput < 3500) return;
+  const f=_nvClamp(novaT/NOVA_DUR,0,1);
+  const reach=Math.max(3, novaReach(f));
+  const dist=reach*3.1 + 6;
+  const ang=novaT*0.12;
+  const desired=new THREE.Vector3(Math.cos(ang)*dist, dist*0.4 + reach*0.3, Math.sin(ang)*dist);
+  camera.position.lerp(desired, 1-Math.pow(0.0016,dt));
+  orbit.target.lerp(_nvZero, 1-Math.pow(0.004,dt));
+}
+function novaUpdateUI(){
+  if (!novaBar || !root) return;
+  const f=_nvClamp(novaT/NOVA_DUR,0,1), ph=novaPhase(f);
+  const phaseEl=root.querySelector('#stNovaPhase'); if(phaseEl) phaseEl.textContent=ph.t+' · '+ph.yr;
+  const scrub=root.querySelector('#stNovaScrub');
+  if(scrub){ scrub.value=String(Math.round(f*1000)); scrub.style.setProperty('--nvp',(f*100).toFixed(1)+'%'); }
+  const play=root.querySelector('#stNovaPlay'); if(play) play.textContent=novaPlaying?'⏸':'▶';
+}
+function novaEnter(){
+  if (novaOn || !sun) return;
+  novaEnsureShell();
+  _novaSaved={ camMode, sunColor:sun.material.color.getHex(),
+    lightI:sunLight?sunLight.intensity:3.2, lightC:sunLight?sunLight.color.getHex():0xfff4d8,
+    glowO:sunGlow?sunGlow.material.opacity:0.14, glowC:sunGlow?sunGlow.material.color.getHex():0xffb020,
+    pins:dnPinsVisible, belt:asteroidBelt?asteroidBelt.visible:true, simDate:new Date(simDate.getTime()) };
+  playing=false; if(playBtn) playBtn.textContent='▶';
+  try{ setRealtime(false); }catch(_){}
+  if (camMode==='cinematic') setCamMode('explore');   // our own director drives the camera
+  if (dnPinsVisible) dnTogglePins(false);             // pins would scale wildly on the giant Sun
+  novaOn=true; novaPlaying=true; novaT=0; cineLastInput=0;
+  const btn=root.querySelector('#stNova'); if(btn){ btn.classList.add('on'); btn.setAttribute('aria-pressed','true'); }
+  if (novaBar) novaBar.classList.add('on');
+  const noteEl=root.querySelector('#stNovaNote'); if(noteEl) noteEl.innerHTML=NOVA_NOTE;
+  novaApply(0); novaUpdateUI();
+  camera.position.set(0, 16, 46); orbit.target.set(0,0,0);   // establishing shot
+  toast("Sun's End — a cinematic time-lapse of the Sun's death · drag to change your view · click ☀ again to stop");
+}
+function novaExit(){
+  if (!novaOn) return;
+  novaOn=false; novaPlaying=false;
+  const btn=root&&root.querySelector('#stNova'); if(btn){ btn.classList.remove('on'); btn.setAttribute('aria-pressed','false'); }
+  if (novaBar) novaBar.classList.remove('on');
+  if (novaFlashEl) novaFlashEl.style.opacity='0';
+  if (novaShell) novaShell.visible=false;
+  if (sun){ sun.scale.setScalar(1); sun.material.color.setHex(_novaSaved?_novaSaved.sunColor:0xffcf6b); }
+  if (sunLight && _novaSaved){ sunLight.intensity=_novaSaved.lightI; sunLight.color.setHex(_novaSaved.lightC); }
+  if (sunGlow && _novaSaved){ sunGlow.material.opacity=_novaSaved.glowO; sunGlow.material.color.setHex(_novaSaved.glowC); }
+  for (const p of PLANETS){ const rec=planetMeshes[p.key]; if(!rec) continue; rec.group.visible=true; if(rec.orbitLine) rec.orbitLine.visible=true; }
+  if (asteroidBelt) asteroidBelt.visible=_novaSaved?_novaSaved.belt:true;
+  if (_novaSaved){ if(_novaSaved.pins && !dnPinsVisible) dnTogglePins(true); simDate=_novaSaved.simDate; try{ updatePlanets(); }catch(_){} }
+  _novaSaved=null;
+  toast('Returned to the 3D view');
+}
+function novaToggle(){ if (novaOn) novaExit(); else novaEnter(); }
+function novaTogglePlay(){ if(!novaOn) return; if(!novaPlaying && novaT>=NOVA_DUR) novaT=0; novaPlaying=!novaPlaying; cineLastInput=0; novaUpdateUI(); }
+function novaReplay(){ if(!novaOn) return; novaT=0; novaPlaying=true; cineLastInput=0; novaApply(0); novaUpdateUI(); }
+function novaSeek(frac){ if(!novaOn) return; novaPlaying=false; novaT=_nvClamp(frac,0,1)*NOVA_DUR; novaApply(_nvClamp(frac,0,1)); novaUpdateUI(); }
+function novaTick(dt){
+  if (novaPlaying){ novaT += dt; if (novaT>=NOVA_DUR){ novaT=NOVA_DUR; novaPlaying=false; } }
+  novaApply(_nvClamp(novaT/NOVA_DUR,0,1));
+  novaFrameCamera(dt);
+  _nvUiAccum += dt; if (_nvUiAccum>0.1){ _nvUiAccum=0; novaUpdateUI(); }
 }
 
 /* ---------------------------------------------------------------------------
@@ -1749,6 +2080,12 @@ function onPointerDown(e){
   pointer.x = ((e.clientX - r.left)/r.width)*2 - 1;
   pointer.y = -((e.clientY - r.top)/r.height)*2 + 1;
   raycaster.setFromCamera(pointer, camera);
+  // The teal offset pin explains why the dashed line appears — check it first
+  // (it's the smaller, more specific target sitting beside the midpoint marker).
+  if (navOffsetMarker){
+    const offHit = raycaster.intersectObject(navOffsetMarker, false)[0];
+    if (offHit){ navExplainOffset(); return; }
+  }
   // The NAVLINQ midpoint marker is selectable — clicking it focuses/flies there.
   if (navMidMarker){
     const midHit = raycaster.intersectObject(navMidMarker, false)[0];
@@ -2145,13 +2482,16 @@ function openStudio(){
   // resume audio contexts after the user gesture that opened the studio
   if (listener.context.state==='suspended') listener.context.resume().catch(()=>{});
   if (!raf) animate();
-  toast('3D Studio — drag to orbit, or press C for cinematic');
+  saveView('3d');                               // remember this view for the next visit
+  if (!_restoringView) toast('3D Studio — drag to orbit, or press C for cinematic');
 }
 function close(){
   open = false; root.classList.remove('on');
+  if (novaOn) novaExit();                       // restore the Sun + planets before leaving 3D
   toggleSuiteChrome(false);
   syncViewSwitch(false);
   cancelAnimationFrame(raf); raf = 0;
+  saveView('2d');                               // remember this view for the next visit
   // pause any playing media to save resources
   imported.forEach(im=>{ if (im.extra.video) im.extra.video.pause(); });
 }
@@ -2177,6 +2517,21 @@ function wireOpener(){
   if (b2) b2.addEventListener('click', ()=>{ if (open) close(); });
   const legacy = document.getElementById('studioBtn'); // older markup fallback
   if (legacy) legacy.addEventListener('click', openStudio);
+  // Restore the last view chosen on this device. Default stays 2D (no stored
+  // value → first-time visitors keep the familiar physics sandbox). Auto-open
+  // is silent; audio stays suspended until the first real gesture (browser
+  // autoplay policy) — openStudio already tolerates that gracefully.
+  // Deferred to the next tick so every top-level binding in this module (e.g.
+  // dnInited, used by buildScene→initDeepNav) is fully initialised before the
+  // studio builds — wireOpener can run mid-evaluation, so opening inline would
+  // hit a temporal-dead-zone on those later declarations.
+  if (readView()==='3d'){
+    setTimeout(()=>{
+      if (open) return;
+      _restoringView = true;
+      try{ openStudio(); } finally { _restoringView = false; }
+    }, 0);
+  }
 }
 if (document.readyState==='loading') document.addEventListener('DOMContentLoaded', wireOpener);
 else wireOpener();
@@ -2469,6 +2824,10 @@ function dnBuildPins(){
   for (const p of PLANETS){ const rec=planetMeshes[p.key]; if(!rec) continue;
     dnAddPin(rec.group, new THREE.Vector3(0,p.size*1.7,0), { kind:'body', key:p.key, name:p.name, standoff:p.size*4+1.6 }, '#7c5cff'); }
   if (sun) dnAddPin(sun, new THREE.Vector3(0,4.6,0), { kind:'body', key:'sun', name:'Sun', standoff:14 }, '#ffb020');
+  // Moon — its own dedicated purple identifier thumbtack (clickable → flies to the
+  // Moon; NAVLINQ-selectable). A distinct lavender (vs. the planets' indigo body
+  // pins and the Sun's amber) so the Moon reads as its own marker beside Earth.
+  if (moon) dnAddPin(moon.mesh, new THREE.Vector3(0,0.09*2.0,0), { kind:'body', key:'moon', name:'Moon', standoff:0.7 }, '#b388ff');
   // surface landmarks (attached to the spinning surface where possible)
   for (const key in LANDMARKS){ const rec=planetMeshes[key]; if(!rec) continue; const p=PLANETS.find(x=>x.key===key);
     for (const [nm,lat,lon] of LANDMARKS[key]){
@@ -2872,4 +3231,12 @@ window.__cosmosStudio = { open:openStudio, close, heliocentric, auToScene, PLANE
   dnPanel:(id)=>dnPanel(id), dnParseZoom:(s)=>dnParseZoom(s), dnTogglePins:()=>dnTogglePins(),
   dnFlyToKey:(k)=>dnFlyToBodyKey(k), get dnFocus(){ return dnNearestBody()?.key||null; },
   get dnPinCount(){ return dnPins.length; }, get dnFlying(){ return !!(dnFlight&&dnFlight.active); },
+  // Sun's End (stellar-death cinematic) hooks
+  novaToggle:()=>novaToggle(), novaEnter:()=>novaEnter(), novaExit:()=>novaExit(),
+  novaSeek:(f)=>novaSeek(f), novaPlay:()=>novaTogglePlay(), novaReplay:()=>novaReplay(),
+  get novaOn(){ return novaOn; }, get novaPlaying(){ return novaPlaying; },
+  get novaFrac(){ return +(_nvClamp(novaT/NOVA_DUR,0,1)).toFixed(4); },
+  get novaSunScale(){ return sun ? +sun.scale.x.toFixed(4) : null; },
+  get novaReach(){ return +novaReach(_nvClamp(novaT/NOVA_DUR,0,1)).toFixed(3); },
+  get novaVisiblePlanets(){ return PLANETS.filter(p=>planetMeshes[p.key]&&planetMeshes[p.key].group.visible).map(p=>p.key); },
   get dnFlightActive(){ return !!dnFlightSim; }, get dnWorldSlow(){ return dnWorldSlow; }, get airportCount(){ return Object.keys(AIRPORTS).length; } };
