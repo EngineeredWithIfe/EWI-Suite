@@ -214,6 +214,7 @@ let _novaSaved = null;                         // saved scene state for a clean 
 let novaBar = null, novaFlashEl = null;        // control "screen" + climax flash overlay
 let novaRec = null;                            // active Sun's End MediaRecorder session (or null)
 let novaRecComp = null;                        // per-frame compositor for the "scene + cards" export
+let novaFocusOn = false;                       // focus lock — hold on the selected object, stop auto camera
 // Remember the last render view (2D sandbox vs 3D studio) on this device, so a
 // refresh / reopened tab restores exactly where the user left off.
 const VIEW_KEY = 'ewi-cosmos-view';            // localStorage: '2d' | '3d'
@@ -361,6 +362,8 @@ function injectCSS(){
   .st-nova button:hover{background:rgba(255,138,60,.2);border-color:rgba(255,138,60,.55)}
   .st-nova button:disabled{opacity:.4;cursor:not-allowed}
   .st-nova #stNovaExport.nv-rec{color:#ffb3b3;border-color:rgba(255,90,90,.6);background:rgba(255,60,60,.18)}
+  .st-nova #stNovaFocus.on{background:linear-gradient(180deg,#7c5cff,#5a3fd6);border-color:transparent;color:#fff;
+    box-shadow:0 0 0 1px rgba(124,92,255,.5),0 6px 18px rgba(90,63,214,.35)}
   .st-nova .nv-menu{position:absolute;right:10px;bottom:calc(100% + 8px);display:flex;flex-direction:column;gap:6px;
     padding:8px;border-radius:12px;background:rgba(14,12,20,.97);border:1px solid rgba(255,138,60,.4);
     box-shadow:0 20px 60px rgba(0,0,0,.6);z-index:20}
@@ -523,6 +526,7 @@ function buildDOM(){
         <span class="nv-spacer"></span>
         <button id="stNovaPlay" title="Pause / resume playback">⏸</button>
         <button id="stNovaReplay" title="Replay from the beginning">↺</button>
+        <button id="stNovaFocus" title="Focus lock — hold on your selected object and stop the auto camera" aria-pressed="false">◎ Focus</button>
         <button id="stNovaExport" title="Export this Sun&rsquo;s End as an MP4 video">⤓ MP4</button>
         <button id="stNovaExit" title="Exit — return to the normal 3D view">✕</button>
       </div>
@@ -591,6 +595,7 @@ function buildDOM(){
   root.querySelector('#stNova').addEventListener('click', ()=>novaToggle());
   root.querySelector('#stNovaPlay').addEventListener('click', novaTogglePlay);
   root.querySelector('#stNovaReplay').addEventListener('click', novaReplay);
+  root.querySelector('#stNovaFocus').addEventListener('click', novaToggleFocus);
   root.querySelector('#stNovaExport').addEventListener('click', novaExportMenu);
   root.querySelector('#stNovaExit').addEventListener('click', ()=>novaExit());
   root.querySelector('#stNovaScrub').addEventListener('input', e=>novaSeek((+e.target.value)/1000));
@@ -1930,6 +1935,10 @@ function novaApply(f){
 // Auto-directed establishing camera that pulls back to keep the growing envelope
 // framed — but yields the instant the user orbits/zooms/pans (like Cinematic mode).
 function novaFrameCamera(dt){
+  if (novaFocusOn){
+    orbit.target.lerp(novaComputeFocusTarget(), 1-Math.pow(0.02, dt));   // hold on the selection; leave the camera to the user
+    return;                                                              // focus lock stops the auto scene change
+  }
   if (performance.now()-cineLastInput < 3500) return;
   const f=_nvClamp(novaT/NOVA_DUR,0,1);
   const reach=Math.max(3, novaReach(f));
@@ -1959,6 +1968,8 @@ function novaEnter(){
   if (camMode==='cinematic') setCamMode('explore');   // our own director drives the camera
   if (dnPinsVisible) dnTogglePins(false);             // pins would scale wildly on the giant Sun
   novaOn=true; novaPlaying=true; novaT=0; cineLastInput=0;
+  novaFocusOn=false;
+  const fbtn=root.querySelector('#stNovaFocus'); if(fbtn){ fbtn.classList.remove('on'); fbtn.setAttribute('aria-pressed','false'); }
   const btn=root.querySelector('#stNova'); if(btn){ btn.classList.add('on'); btn.setAttribute('aria-pressed','true'); }
   if (novaBar) novaBar.classList.add('on');
   const noteEl=root.querySelector('#stNovaNote'); if(noteEl) noteEl.innerHTML=NOVA_NOTE;
@@ -1970,6 +1981,8 @@ function novaExit(){
   if (!novaOn) return;
   if (novaRec) novaRecStop(false);              // discard any in-progress recording
   novaOn=false; novaPlaying=false;
+  novaFocusOn=false;
+  const fbtn=root&&root.querySelector('#stNovaFocus'); if(fbtn){ fbtn.classList.remove('on'); fbtn.setAttribute('aria-pressed','false'); }
   const btn=root&&root.querySelector('#stNova'); if(btn){ btn.classList.remove('on'); btn.setAttribute('aria-pressed','false'); }
   if (novaBar) novaBar.classList.remove('on');
   if (novaFlashEl) novaFlashEl.style.opacity='0';
@@ -1987,6 +2000,27 @@ function novaToggle(){ if (novaOn) novaExit(); else novaEnter(); }
 function novaTogglePlay(){ if(!novaOn) return; if(!novaPlaying && novaT>=NOVA_DUR) novaT=0; novaPlaying=!novaPlaying; cineLastInput=0; novaUpdateUI(); }
 function novaReplay(){ if(!novaOn) return; novaT=0; novaPlaying=true; cineLastInput=0; novaApply(0); novaUpdateUI(); }
 function novaSeek(frac){ if(!novaOn) return; novaPlaying=false; novaT=_nvClamp(frac,0,1)*NOVA_DUR; novaApply(_nvClamp(frac,0,1)); novaUpdateUI(); }
+function novaToggleFocus(){
+  if (!novaOn) return;
+  novaFocusOn = !novaFocusOn;
+  const b = root && root.querySelector('#stNovaFocus');
+  if (b){ b.classList.toggle('on', novaFocusOn); b.setAttribute('aria-pressed', String(novaFocusOn)); }
+  toast(novaFocusOn
+    ? 'Focus lock on — holding on your selected object; the time-lapse keeps playing'
+    : 'Focus lock off — the camera resumes its cinematic auto-direction');
+}
+// The point the focus lock holds on: the user's last-selected planet or imported
+// object if it's still present, else the coordinate card's active body, else the
+// Sun at the scene origin.
+function novaComputeFocusTarget(){
+  if (selected){
+    if (selected.type==='planet'){ const rec=planetMeshes[selected.key]; if(rec && rec.group && rec.group.visible) return rec.group.position.clone(); }
+    else if (selected.type==='imported' && selected.im && selected.im.object3d) return selected.im.object3d.position.clone();
+  }
+  const nb = dnActiveBody();
+  if (nb && nb.center) return nb.center.clone();
+  return new THREE.Vector3(0,0,0);
+}
 function novaTick(dt){
   if (novaPlaying){ novaT += dt; if (novaT>=NOVA_DUR){ novaT=NOVA_DUR; novaPlaying=false; } }
   novaApply(_nvClamp(novaT/NOVA_DUR,0,1));
@@ -2174,6 +2208,23 @@ function novaRecBuildOverlay(c){
       clone.style.left = Math.round(r.left)+'px';
       clone.style.top  = Math.round(r.top)+'px';
       clone.style.margin = '0';
+      clone.style.boxShadow = 'none';     // drop the soft drop-shadow — it rasterises as a translucent rectangle sitting off the card's frame
+      clone.style.transition = 'none';
+      // <canvas> pixels aren't carried by cloneNode/XMLSerializer, so bake each
+      // live canvas (e.g. the animated X·Y·Z gizmo and its lat/long rings) into an
+      // <img> snapshot so those animations actually appear in the recording.
+      const liveCv  = p.querySelectorAll('canvas');
+      const cloneCv = clone.querySelectorAll('canvas');
+      for (let i=0;i<cloneCv.length;i++){
+        try{
+          const im = document.createElement('img');
+          if (cloneCv[i].className) im.setAttribute('class', cloneCv[i].className);
+          im.setAttribute('width', liveCv[i].width); im.setAttribute('height', liveCv[i].height);
+          const st = cloneCv[i].getAttribute('style'); if (st) im.setAttribute('style', st);
+          im.setAttribute('src', liveCv[i].toDataURL('image/png'));
+          cloneCv[i].parentNode.replaceChild(im, cloneCv[i]);
+        }catch(_){}
+      }
       try{ inner += ser.serializeToString(clone); }catch(_){}
     }
     if (!inner){ c.overlay=null; return; }
