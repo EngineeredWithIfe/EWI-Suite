@@ -2517,15 +2517,16 @@ function wireOpener(){
   if (b2) b2.addEventListener('click', ()=>{ if (open) close(); });
   const legacy = document.getElementById('studioBtn'); // older markup fallback
   if (legacy) legacy.addEventListener('click', openStudio);
-  // Restore the last view chosen on this device. Default stays 2D (no stored
-  // value → first-time visitors keep the familiar physics sandbox). Auto-open
-  // is silent; audio stays suspended until the first real gesture (browser
+  // Restore the last view chosen on this device. Default is now 3D (no stored
+  // value → first-time visitors land in the immersive 3D studio); only an
+  // explicit prior '2d' choice keeps the flat physics sandbox. Auto-open is
+  // silent; audio stays suspended until the first real gesture (browser
   // autoplay policy) — openStudio already tolerates that gracefully.
   // Deferred to the next tick so every top-level binding in this module (e.g.
   // dnInited, used by buildScene→initDeepNav) is fully initialised before the
   // studio builds — wireOpener can run mid-evaluation, so opening inline would
   // hit a temporal-dead-zone on those later declarations.
-  if (readView()==='3d'){
+  if (readView()!=='2d'){
     setTimeout(()=>{
       if (open) return;
       _restoringView = true;
