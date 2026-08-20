@@ -253,7 +253,10 @@ let _bhSaved = null;                           // pre-sim snapshot for a clean, 
 let bhCineOn = false, bhCinePlaying = false, bhCineT = 0, bhCineTarget = null, bhCineFocusOn = false;
 let bhBar = null;                              // #stBhBar cinematic control card
 let bhRec = null, bhRecComp = null;            // black-hole cinematic MP4 recorder + "scene + cards" compositor (same engine as Sun's End)
-let bhCineStar = null;                         // main-character Scene id the cinematic frames (null = the black hole itself)
+let bhCineStars = [];                          // main-character Scene ids toured during the cinematic (empty = the black hole itself is the subject)
+let bhStarIdx = 0, bhStarHold = 0, bhStarClock = 0;   // POV-tour cursor, seconds held on the current subject, and an always-advancing clock
+let bhLingerSec = 5;                           // per-POV linger (the "timer modifier") — seconds each chosen subject holds before the camera glides on
+let bhStaging = false;                         // Lock-in done, Begin not yet pressed — pick main character(s) + set the linger before the show starts
 let _bhCineUiAccum = 0;
 const BH_CINE_DUR = 60;                        // seconds of wall-clock for one full black-hole cinematic
 const BH_GM_REF = 26;                          // scene gravitational parameter of the reference (1e6 M☉) hole → watchable free-fall
@@ -576,6 +579,15 @@ function injectCSS(){
   .st-nova.st-bh button:hover{background:rgba(150,130,255,.22);border-color:rgba(150,130,255,.6)}
   .st-nova.st-bh #stBhFocus.on{background:linear-gradient(180deg,#8a7cff,#4b3fb0);border-color:transparent;color:#fff;
     box-shadow:0 0 0 1px rgba(138,124,255,.5),0 6px 18px rgba(75,63,176,.35)}
+  .st-nova.st-bh #stBhBegin{background:linear-gradient(180deg,#57e0a0,#2b9c6a);border-color:transparent;color:#04140d;font-weight:800}
+  .st-nova.st-bh #stBhBegin:hover{filter:brightness(1.08);background:linear-gradient(180deg,#57e0a0,#2b9c6a);border-color:transparent}
+  .st-nova.st-bh:not(.staging) #stBhBegin{display:none}
+  .st-nova.st-bh.staging #stBhPlay,.st-nova.st-bh.staging #stBhReplay,.st-nova.st-bh.staging #stBhExport{display:none}
+  .st-nova.st-bh.staging .nv-scrub{opacity:.4;pointer-events:none}
+  .st-nova.st-bh .nv-linger{display:flex;align-items:center;gap:9px;margin-top:7px}
+  .st-nova.st-bh .nv-linger .nvl-lbl{font-size:11px;color:#c9c1f0;white-space:nowrap}
+  .st-nova.st-bh .nv-linger input[type=range]{flex:1;accent-color:#8a7cff;cursor:pointer}
+  .st-nova.st-bh .nv-linger .nvl-read{font-size:11px;color:#ffd9a8;font-variant-numeric:tabular-nums;min-width:26px;text-align:right}
   .st-nova .nv-rec{background:linear-gradient(180deg,#ff5a6a,#c11f38)!important;border-color:transparent!important;color:#fff!important;
     box-shadow:0 0 0 1px rgba(255,90,106,.5),0 6px 18px rgba(193,31,56,.4);animation:nvRecPulse 1.1s ease-in-out infinite}
   @keyframes nvRecPulse{0%,100%{filter:brightness(1)}50%{filter:brightness(1.28)}}
@@ -925,15 +937,21 @@ function buildDOM(){
         <span class="nv-time" id="stBhPhase">Approach</span>
         <span class="nv-spacer"></span>
         <div class="nv-actions">
+          <button id="stBhBegin" title="Begin — start the cinematic (and any armed MP4 recording) from the moment of placement">▸ Begin</button>
           <button id="stBhPlay" title="Pause / resume the cinematic">⏸</button>
           <button id="stBhReplay" title="Restart — replay the whole event from the moment the black hole was placed">↺</button>
-          <button id="stBhFocus" title="Focus lock — hold on your selected object and stop the auto camera" aria-pressed="false">◎ Focus</button>
+          <button id="stBhFocus" title="Focus — tour your chosen main character(s) instead of the black hole" aria-pressed="false">◎ Focus</button>
           <button id="stBhAdd" title="Add another independent black hole">＋ Hole</button>
           <button id="stBhExport" title="Export this black-hole cinematic as an MP4 video">⤓ MP4</button>
           <button id="stBhExit" title="Exit the cinematic — the black hole and its physics keep running">✕</button>
         </div>
       </div>
       <input type="range" class="nv-scrub" id="stBhScrub" min="0" max="1000" value="0" step="1" aria-label="Scrub the black-hole cinematic" />
+      <div class="nv-linger" id="stBhLingerRow">
+        <span class="nvl-lbl">◎ POV linger</span>
+        <input type="range" id="stBhLinger" min="2" max="12" step="0.5" value="5" aria-label="Seconds the camera holds on each main character before moving on" />
+        <span class="nvl-read" id="stBhLingerRead">5s</span>
+      </div>
       <div class="nv-note" id="stBhNote"></div>
     </div>
 
@@ -1043,6 +1061,7 @@ function buildDOM(){
   root.querySelector('#stEcExit').addEventListener('click', ()=>ecExit());
   root.querySelector('#stEcScrub').addEventListener('input', e=>ecSeek((+e.target.value)/1000));
   root.querySelector('#stBlackHole').addEventListener('click', ()=>bhOpenForm());
+  root.querySelector('#stBhBegin').addEventListener('click', bhBegin);
   root.querySelector('#stBhPlay').addEventListener('click', bhCineTogglePlay);
   root.querySelector('#stBhReplay').addEventListener('click', bhCineReplay);
   root.querySelector('#stBhFocus').addEventListener('click', bhCineToggleFocus);
@@ -1050,6 +1069,7 @@ function buildDOM(){
   root.querySelector('#stBhExport').addEventListener('click', bhExportMenu);
   root.querySelector('#stBhExit').addEventListener('click', ()=>bhCineExit());
   root.querySelector('#stBhScrub').addEventListener('input', e=>bhCineSeek((+e.target.value)/1000));
+  root.querySelector('#stBhLinger').addEventListener('input', e=>{ bhLingerSec = _nvClamp(parseFloat(e.target.value)||5, 2, 12); const r=root.querySelector('#stBhLingerRead'); if(r) r.textContent = bhLingerSec.toFixed(1).replace(/\.0$/,'')+'s'; });
   // Black-hole count card (+/− pop-up, Warp-Tempo style)
   root.querySelector('#stBhCountPlus').addEventListener('click', bhCountPlus);
   root.querySelector('#stBhCountMinus').addEventListener('click', bhCountMinus);
@@ -3746,11 +3766,11 @@ function bhResetHoles(){
   for (const hs of _bhSaved.holes){ const bh=blackHoles.find(x=>x.id===hs.id); if(!bh) continue; bh.massMsun=hs.massMsun; bh.rs=hs.rs; bh.rs0=hs.rs0; bhUpdateMesh(bh); }
 }
 // Restart the whole event — restore the system to the moment of placement and play
-// the entire infall again from the top. The chosen main character (bhCineStar) and
+// the entire infall again from the top. The chosen main character(s) (bhCineStars) and
 // every black hole are preserved. `silent` suppresses the confirmation toast (used
 // when a recording restarts the event so it captures the show from the first frame).
 function bhReplayEvent(silent){
-  if (!bhCineOn) return;
+  if (!bhCineOn || bhStaging) return;
   if (bhSimOn && _bhSaved){
     bhRestoreInitialState();                     // planets / Sun / imported / belt back to placement
     bhResetHoles();                              // holes back to their placement mass + size
@@ -3776,24 +3796,15 @@ function bhSimStop(restore){
 }
 
 /* ---- Black-hole cinematic — its own "Sun's End" ---- */
-function bhCineFocusTarget(out){
-  // A chosen "main character" always wins — Focus lock then holds on that object.
-  if (bhCineStar && cineCenterOf(bhCineStar, out) >= 0) return;
-  if (bhCineFocusOn && selected){
-    if (selected.type==='planet'){ const rec=planetMeshes[selected.key]; if(rec&&rec.group.visible){ out.copy(rec.group.position); return; } }
-    else if (selected.type==='imported' && selected.im && selected.im.object3d.visible){ out.copy(selected.im.object3d.position); return; }
-    else if (selected.type==='bh' && selected.bh.group){ out.copy(selected.bh.pos); return; }
-  }
-  if (bhCineTarget && bhCineTarget.group) out.copy(bhCineTarget.pos); else out.set(0,0,0);
-}
 function bhCineTick(dt){
+  bhStarClock += dt;                                              // an always-advancing clock (runs in staging and playback alike)
   if (bhCinePlaying){ bhCineT += dt; if (bhCineT>=BH_CINE_DUR){ bhCineT=BH_CINE_DUR; bhCinePlaying=false; } }
   const bh = bhCineTarget;
   if (bh && bh.group){
-    bhCineFocusTarget(_bhA);
-    if (bhCineFocusOn){ orbit.target.lerp(_bhA, 1-Math.pow(0.02,dt)); }
-    else if (bhCineStar && cineCenterOf(bhCineStar, _bhStarP) >= 0){ bhStarShot(dt); }   // a Scene object is the "main character" → timed POV shots
-    else if (performance.now()-cineLastInput >= 3200){
+    if (performance.now()-cineLastInput < 3200){ /* the user is steering — don't fight them */ }
+    else if (bhCineFocusOn && bhCineStars.length){ bhStarCycle(dt); }        // POV tour of the chosen main character(s)
+    else if (bhCineFocusOn){ bhHoldTarget(dt); }                            // Focus on, none picked yet → a gentle hold on the hole
+    else {                                                                  // Focus off → the classic black-hole choreography
       const f = _nvClamp(bhCineT/BH_CINE_DUR, 0, 1);
       const rs = bh.rs;
       const calm = _bhReduce()?0.4:1;
@@ -3807,7 +3818,7 @@ function bhCineTick(dt){
       if (bh.pov==='faceon') elev = 1.15;
       else if (bh.pov==='edgeon') elev = 0.06;
       else if (bh.pov==='wide') dist *= 1.6;
-      const ang = bhCineT*0.14*calm;
+      const ang = (bhStaging ? bhStarClock*0.10 : bhCineT*0.14)*calm;
       _bhB.set(bh.pos.x + Math.cos(ang)*dist, bh.pos.y + dist*elev, bh.pos.z + Math.sin(ang)*dist);
       camera.position.lerp(_bhB, 1-Math.pow(0.0018,dt));
       orbit.target.lerp(bh.pos, 1-Math.pow(0.004,dt));
@@ -3820,72 +3831,58 @@ function bhCineTick(dt){
   }
   _bhCineUiAccum += dt; if (_bhCineUiAccum>0.1){ _bhCineUiAccum=0; bhCineUpdateUI(); }
 }
-// Main-character choreography: while the cinematic plays (or records), a chosen
-// Scene object becomes the subject and the camera cuts through a repeating set of
-// timed shots — hero close-up → subject + black-hole two-shot → a neighbouring
-// body cameo (supporting cast) → a wide of the black hole with the subject in the
-// field. Framing distances scale with each body's true size via cineCenterOf().
-function bhStarShot(dt){
+// A steady, gentle hold framing the black hole — used while Focus is on but no main
+// character has been chosen yet (typically during staging, before Begin).
+function bhHoldTarget(dt){
   const bh = bhCineTarget; if (!bh) return;
-  const sr = cineCenterOf(bhCineStar, _bhStarP);           // subject world-pos → _bhStarP, apparent radius → sr
-  if (sr < 0){ bhCineStar = null; return; }                // subject vanished (e.g. absorbed) → fall back to the hole
-  if (performance.now()-cineLastInput < 3200) return;      // the user is steering — don't fight them
-  const calm = _bhReduce()?0.5:1;
-  const beatLen = 3.4;
-  const beat = Math.floor(bhCineT/beatLen) % 4;
-  const ang = bhCineT*0.16*calm;
-  const camPos = _bhB, tgt = _bhStarQ;
-  if (beat === 0){                       // hero close-up of the subject
-    const d = sr*6 + 3;
-    camPos.set(_bhStarP.x+Math.cos(ang)*d, _bhStarP.y+d*0.35, _bhStarP.z+Math.sin(ang)*d);
-    tgt.copy(_bhStarP);
-  } else if (beat === 1){                 // two-shot: subject in the foreground, black hole beyond
-    _bhMid.copy(_bhStarP).add(bh.pos).multiplyScalar(0.5);
-    const span = _bhStarP.distanceTo(bh.pos);
-    _bhTan.copy(_bhStarP).sub(bh.pos).cross(_bhUp);
-    if (_bhTan.lengthSq() < 1e-6) _bhTan.set(1,0,0);
-    _bhTan.normalize();
-    const d = span*0.9 + sr*4 + bh.rs*3;
-    camPos.copy(_bhMid).addScaledVector(_bhTan, d).addScaledVector(_bhUp, d*0.3);
-    tgt.copy(_bhMid);
-  } else if (beat === 2){                 // supporting cast — the nearest neighbouring body
-    const nb = bhStarNeighbour();
-    if (nb >= 0){ const d = _bhNbR*6 + 4; camPos.set(_bhNbP.x+Math.cos(ang)*d, _bhNbP.y+d*0.4, _bhNbP.z+Math.sin(ang)*d); tgt.copy(_bhNbP); }
-    else { const d = sr*7 + 4; camPos.set(_bhStarP.x+Math.cos(ang)*d, _bhStarP.y+d*0.4, _bhStarP.z+Math.sin(ang)*d); tgt.copy(_bhStarP); }
-  } else {                                // a wide of the black hole, subject in the field
-    const d = bh.rs*11 + 16;
-    camPos.set(bh.pos.x+Math.cos(ang)*d, bh.pos.y+d*0.4, bh.pos.z+Math.sin(ang)*d);
-    tgt.copy(bh.pos);
-  }
-  camera.position.lerp(camPos, 1-Math.pow(0.0022,dt));
-  orbit.target.lerp(tgt, 1-Math.pow(0.006,dt));
+  const d = bh.rs*12 + 16;
+  const ang = bhStarClock*0.08*(_bhReduce()?0.5:1);
+  _bhB.set(bh.pos.x + Math.cos(ang)*d, bh.pos.y + d*0.42, bh.pos.z + Math.sin(ang)*d);
+  camera.position.lerp(_bhB, 1-Math.pow(0.01,dt));
+  orbit.target.lerp(bh.pos, 1-Math.pow(0.02,dt));
 }
-// Nearest Scene body to the current subject (excluding the subject itself); its
-// world-pos lands in _bhNbP and apparent radius in _bhNbR. Returns radius or -1.
-function bhStarNeighbour(){
-  let best = -1, bestD = Infinity;
-  for (const id of cineFocusList()){
-    if (id === bhCineStar) continue;
-    const r = cineCenterOf(id, _bhA);
-    if (r < 0) continue;
-    const d = _bhA.distanceTo(_bhStarP);
-    if (d < bestD){ bestD = d; best = r; _bhNbP.copy(_bhA); _bhNbR = r; }
-  }
-  return best;
+// Main-character POV tour: cycle through every chosen subject, holding a slow hero
+// orbit on each for bhLingerSec seconds before advancing to the next. Because the
+// camera eases toward the active subject every frame, a subject change reads as a
+// smooth glide — never a jump-cut — and framing scales with each body's true size
+// via cineCenterOf(). Absorbed subjects are skipped automatically.
+function bhStarCycle(dt){
+  const bh = bhCineTarget; if (!bh) return;
+  const alive = bhCineStars.filter(id=>cineCenterOf(id, _bhA) >= 0);
+  if (!alive.length){ bhHoldTarget(dt); return; }               // every subject gone → hold on the hole
+  bhStarHold += dt;
+  if (bhStarHold >= bhLingerSec){ bhStarHold = 0; bhStarIdx++; }
+  const id = alive[bhStarIdx % alive.length];
+  const sr = cineCenterOf(id, _bhStarP);                        // subject world-pos → _bhStarP, apparent radius → sr
+  const calm = _bhReduce()?0.5:1;
+  const ang = bhStarClock*0.12*calm + (bhStarIdx*1.7);          // slow orbit, phase-offset per subject
+  const d = sr*6 + 3;
+  _bhB.set(_bhStarP.x+Math.cos(ang)*d, _bhStarP.y+d*0.35, _bhStarP.z+Math.sin(ang)*d);
+  camera.position.lerp(_bhB, 1-Math.pow(0.006,dt));            // gentle, lingering ease — never a hard cut
+  orbit.target.lerp(_bhStarP, 1-Math.pow(0.012,dt));
 }
 // Make a Scene object the cinematic's "main character". Passing the hole's own id
 // (or null) returns to the default black-hole-centred show.
 function bhCineSetStar(id){
-  if (id && bhCineTarget && id === bhCineTarget.id) id = null;
-  bhCineStar = id;
-  bhCineFocusOn = false;
+  if (!id) return;
+  if (bhCineTarget && id === bhCineTarget.id) return;            // the hole is the stage, not a character
+  const i = bhCineStars.indexOf(id);
+  if (i >= 0) bhCineStars.splice(i, 1);                          // toggle off
+  else bhCineStars.push(id);                                     // toggle on (multi-select)
+  if (bhCineStars.length){                                       // picking a subject turns Focus on by default
+    bhCineFocusOn = true;
+    const b = root && root.querySelector('#stBhFocus');
+    if (b){ b.classList.add('on'); b.setAttribute('aria-pressed','true'); }
+  }
+  bhStarIdx = 0; bhStarHold = 0;
   cineLastInput = 0;
-  const b = root && root.querySelector('#stBhFocus');
-  if (b){ b.classList.remove('on'); b.setAttribute('aria-pressed','false'); }
   bhSyncStarHighlight();
   bhCineUpdateUI();
-  toast(id ? ('Now starring ' + cineName(id) + ' — timed shots of it, its neighbours and ' + (bhCineTarget?bhCineTarget.name:'the black hole'))
-           : 'Back to the black hole as the main subject');
+  const names = bhCineStars.map(cineName).join(', ');
+  const secs = bhLingerSec.toFixed(1).replace(/\.0$/,'');
+  toast(bhCineStars.length
+    ? ('Starring ' + names + ' — POV tour, ' + secs + 's on each')
+    : 'No main characters — Focus holds on ' + (bhCineTarget?bhCineTarget.name:'the black hole'));
 }
 function bhCineUpdateUI(){
   if (!bhBar || !root || !bhCineTarget) return;
@@ -3896,11 +3893,18 @@ function bhCineUpdateUI(){
     : f<0.85 ? 'Accretion — matter spirals past the horizon'
     : 'Aftermath — a rearranged system';
   const remain = bhBodies.filter(b=>b.alive).length;
-  const starName = bhCineStar ? cineName(bhCineStar) : null;
+  const starName = bhCineStars.length ? bhCineStars.map(cineName).join(' · ') : null;
   const titleEl = root.querySelector('#stBhTitle'); if (titleEl) titleEl.textContent = starName ? (starName + ' ✦ ' + bh.name) : bh.name;
-  const timeEl = root.querySelector('#stBhPhase'); if (timeEl) timeEl.textContent = (starName ? ('Starring ' + starName) : phase) + ' · ' + remain + ' bodies remain';
+  const timeEl = root.querySelector('#stBhPhase');
+  if (timeEl){
+    timeEl.textContent = bhStaging
+      ? (starName ? ('Staged · starring ' + starName + ' — press ▸ Begin') : 'Staged — pick your main character(s), then ▸ Begin')
+      : (starName ? ('Starring ' + starName) : phase) + ' · ' + remain + ' bodies remain';
+  }
   const scrub = root.querySelector('#stBhScrub'); if (scrub){ scrub.value=String(Math.round(f*1000)); scrub.style.setProperty('--nvp',(f*100).toFixed(1)+'%'); }
   const play = root.querySelector('#stBhPlay'); if (play) play.textContent = bhCinePlaying?'⏸':'▶';
+  const lingRead = root.querySelector('#stBhLingerRead'); if (lingRead) lingRead.textContent = bhLingerSec.toFixed(1).replace(/\.0$/,'') + 's';
+  const lingIn = root.querySelector('#stBhLinger'); if (lingIn && document.activeElement!==lingIn) lingIn.value = String(bhLingerSec);
   const note = root.querySelector('#stBhNote');
   if (note){
     note.innerHTML = `<b>${bh.name}</b> · ${bh.massMsun.toLocaleString(undefined,{maximumSignificantDigits:4})} M☉ · `+
@@ -3909,43 +3913,71 @@ function bhCineUpdateUI(){
       `Newtonian mechanics hold outside the strong-field region; general relativity refines the motion near the horizon.`;
   }
 }
-function bhEnterCinema(bh){
+// Stage the cinematic without starting it. The black hole exists and the bhBar
+// appears with Focus on by default; the user can now multi-select the main
+// character(s) in the Scene list and dial the POV linger. Physics and the timeline
+// stay paused until Begin, so nothing falls in prematurely.
+function bhStageCinema(bh){
   if (!bh) return;
   if (novaOn) novaExit();
   if (ecOn) ecExit();
-  bhCineTarget = bh; bhCineOn = true; bhCinePlaying = true; bhCineT = 0; bhCineFocusOn = false; bhCineStar = null; cineLastInput = 0;
+  bhCineTarget = bh; bhCineOn = true; bhStaging = true; bhCinePlaying = false; bhCineT = 0;
+  bhCineFocusOn = true; bhCineStars = []; bhStarIdx = 0; bhStarHold = 0; bhStarClock = 0; cineLastInput = 0;
   if (camMode==='cinematic') setCamMode('explore');
   if (dnPinsVisible) dnTogglePins(false);
-  bhSimStart();
-  const fbtn = root && root.querySelector('#stBhFocus'); if (fbtn){ fbtn.classList.remove('on'); fbtn.setAttribute('aria-pressed','false'); }
-  if (bhBar) bhBar.classList.add('on');
+  const fbtn = root && root.querySelector('#stBhFocus'); if (fbtn){ fbtn.classList.add('on'); fbtn.setAttribute('aria-pressed','true'); }
+  if (bhBar){ bhBar.classList.add('on'); bhBar.classList.add('staging'); }
   bhCountRefresh();
   // establishing shot
-  const d = bh.rs*16 + 22;
+  const d = bh.rs*14 + 20;
   camera.position.set(bh.pos.x, bh.pos.y + d*0.5, bh.pos.z + d);
   orbit.target.copy(bh.pos);
   bhSyncStarHighlight();
   bhCineUpdateUI();
-  toast('Black-hole cinematic · '+bh.name+' — the simulation begins · drag to change your view · ✕ to exit');
+  toast('Locked in · '+bh.name+' — pick your main character(s) in the Scene list, set the POV linger, then press ▸ Begin');
+}
+// Begin the show: commit the current arrangement as the starting state and start
+// the gravitational infall and the timeline. Any armed MP4 recording captures from
+// frame one. If the cinematic is already running, this just toggles play/pause.
+function bhBegin(){
+  if (!bhCineOn) return;
+  if (!bhStaging){ bhCineTogglePlay(); return; }
+  bhStaging = false;
+  bhSimStart();                       // snapshot the origin and start the infall physics now
+  bhCineT = 0; bhCinePlaying = true; cineLastInput = 0;
+  if (bhBar) bhBar.classList.remove('staging');
+  bhCineUpdateUI();
+  toast('Begin — the infall unfolds' + (bhCineStars.length ? (' · touring ' + bhCineStars.map(cineName).join(', ')) : '') + ' · drag to look around · ✕ to exit');
+}
+// Instant cinematic (an existing hole's ▸ Cinematic action): stage, then begin
+// immediately with the classic black-hole-centred choreography (Focus off).
+function bhEnterCinema(bh){
+  if (!bh) return;
+  bhStageCinema(bh);
+  bhCineFocusOn = false;
+  const fbtn = root && root.querySelector('#stBhFocus'); if (fbtn){ fbtn.classList.remove('on'); fbtn.setAttribute('aria-pressed','false'); }
+  bhBegin();
 }
 function bhCineExit(){
   if (!bhCineOn) return;
   if (bhRec) bhRecStop(true);           // a recording in progress is saved, not discarded
-  bhCineOn = false; bhCinePlaying = false; bhCineFocusOn = false; bhCineStar = null;
-  if (bhBar) bhBar.classList.remove('on');
+  bhCineOn = false; bhCinePlaying = false; bhStaging = false; bhCineFocusOn = false; bhCineStars = [];
+  if (bhBar){ bhBar.classList.remove('on'); bhBar.classList.remove('staging'); }
   bhSyncStarHighlight();
   bhCountRefresh();
   toast('Exited the cinematic — the black hole and its physics keep running in the 3D view');
 }
-function bhCineTogglePlay(){ if(!bhCineOn) return; if(!bhCinePlaying && bhCineT>=BH_CINE_DUR) bhCineT=0; bhCinePlaying=!bhCinePlaying; cineLastInput=0; bhCineUpdateUI(); }
-function bhCineReplay(){ bhReplayEvent(false); }
-function bhCineSeek(frac){ if(!bhCineOn) return; bhCinePlaying=false; bhCineT=_nvClamp(frac,0,1)*BH_CINE_DUR; bhCineUpdateUI(); }
+function bhCineTogglePlay(){ if(!bhCineOn) return; if(bhStaging){ bhBegin(); return; } if(!bhCinePlaying && bhCineT>=BH_CINE_DUR) bhCineT=0; bhCinePlaying=!bhCinePlaying; cineLastInput=0; bhCineUpdateUI(); }
+function bhCineReplay(){ if(bhStaging) return; bhReplayEvent(false); }
+function bhCineSeek(frac){ if(!bhCineOn||bhStaging) return; bhCinePlaying=false; bhCineT=_nvClamp(frac,0,1)*BH_CINE_DUR; bhCineUpdateUI(); }
 function bhCineToggleFocus(){
   if (!bhCineOn) return;
   bhCineFocusOn = !bhCineFocusOn;
   const b = root && root.querySelector('#stBhFocus');
   if (b){ b.classList.toggle('on', bhCineFocusOn); b.setAttribute('aria-pressed', String(bhCineFocusOn)); }
-  toast(bhCineFocusOn ? 'Focus lock on — holding on your selected object' : 'Focus lock off — the camera resumes its cinematic path');
+  toast(bhCineFocusOn
+    ? (bhCineStars.length ? 'Focus on — touring your main character(s)' : 'Focus on — holding on your selected object')
+    : 'Focus off — the camera resumes the black-hole cinematic path');
 }
 
 /* ---- Black-hole cinematic — MP4 export (the exact same engine as Sun's End) ----
@@ -4165,7 +4197,7 @@ function bhOpenForm(){
   camera.position.set(p.x, p.y + d*0.5, p.z + d);
   orbit.target.copy(p);
   bhCountRefresh();
-  toast('Configure your black hole — set its mass, size, position, spin, tilt and POV, then Lock in & begin');
+  toast('Configure your black hole — set its mass, size, position, spin, tilt and POV, then Lock in to stage the shot');
 }
 function bhFormBuild(){
   const d = bhDraft;
@@ -4190,7 +4222,7 @@ function bhFormBuild(){
     `<label class="bhf-row"><span>POV</span><select id="bhfPov" aria-label="Cinematic point of view">`+
       `<option value="orbit">Cinematic orbit</option><option value="edgeon">Edge-on</option><option value="faceon">Face-on / top</option><option value="wide">Wide</option></select></label>`+
     `<div class="bhf-note">Newtonian gravity drives every body toward the hole with exact inverse-square attraction; each hole's characteristics are independent. r<sub>s</sub> = 2GM/c². GR refines motion near the horizon.</div>`+
-    `<div class="bhf-actions"><button id="stBhLock" class="bhf-go" type="button">Lock in &amp; begin ▸</button><button id="stBhCancel2" class="bhf-cancel" type="button">Cancel</button></div>`;
+    `<div class="bhf-actions"><button id="stBhLock" class="bhf-go" type="button">Lock in ▸</button><button id="stBhCancel2" class="bhf-cancel" type="button">Cancel</button></div>`;
   root.appendChild(card);
   const q = s=>card.querySelector(s);
   const readMass = ()=>{ const m=Math.pow(10, parseFloat(q('#bhfMass').value)); q('#bhfMassRead').innerHTML = m.toLocaleString(undefined,{maximumSignificantDigits:4})+' M☉ · r<sub>s</sub> ≈ '+bhFmtKm(bhTrueRsKm(m)); return m; };
@@ -4234,7 +4266,7 @@ function bhLockIn(){
   bhDraft = null;
   const card = root.querySelector('#stBhForm'); if (card) card.remove();
   refreshObjList();
-  bhEnterCinema(d);
+  bhStageCinema(d);
 }
 function bhCancelForm(){
   const card = root.querySelector('#stBhForm'); if (card) card.remove();
@@ -4689,7 +4721,7 @@ function refreshObjList(){
 function bhListGroup(){
   const n = blackHoles.length;
   const subs = blackHoles.map(bh=>{
-    const star = (bhCineOn && bhCineStar===bh.id) ? ' bh-star' : '';
+    const star = (bhCineOn && bhCineStars.includes(bh.id)) ? ' bh-star' : '';
     return `<div class="st-item st-bhsub${star}" data-id="${bh.id}">`+
       `<span class="st-dot st-bhdot" style="background:#140a22" aria-hidden="true">◕</span>`+
       `<span>${bhEsc(bh.name)}</span>`+
@@ -4707,11 +4739,11 @@ function bhListGroup(){
     `</div>`+ subs +
   `</div>`;
 }
-// Keep the Scene-list "main character" highlight in sync with bhCineStar.
+// Keep the Scene-list "main character" highlight in sync with bhCineStars.
 function bhSyncStarHighlight(){
   if (!objListEl) return;
-  const id = (bhCineOn && bhCineStar) ? String(bhCineStar) : null;
-  objListEl.querySelectorAll('.st-item').forEach(el=> el.classList.toggle('bh-star', id!=null && el.dataset.id===id));
+  const set = bhCineOn ? new Set(bhCineStars.map(String)) : null;
+  objListEl.querySelectorAll('.st-item').forEach(el=> el.classList.toggle('bh-star', set!=null && el.dataset.id!=null && set.has(String(el.dataset.id))));
 }
 function bhEsc(s){ return String(s).replace(/[&<>"]/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c])); }
 function listRow(id,name,color,rm,im,isBH){
@@ -5854,8 +5886,11 @@ window.__cosmosStudio = { open:openStudio, close, heliocentric, auToScene, PLANE
     zoom3D.targetR=Math.max(orbit.minDistance,Math.min(orbit.maxDistance, base*Math.max(0.5,Math.min(2,ratio||1)))); zoom3D.active=true; },
   get dnFlightActive(){ return !!dnFlightSim; }, get dnWorldSlow(){ return dnWorldSlow; }, get airportCount(){ return Object.keys(AIRPORTS).length; },
   // Black-hole (accretion / infall) hooks — RAF-independent validation of total consumption
-  bhOpenForm:()=>bhOpenForm(), bhLockIn:()=>bhLockIn(),
-  bhReplay:()=>bhCineReplay(), bhSetStar:(id)=>bhCineSetStar(id), get bhCineStar(){ return bhCineStar; }, get bhCineOn(){ return bhCineOn; },
+  bhOpenForm:()=>bhOpenForm(), bhLockIn:()=>bhLockIn(), bhBegin:()=>bhBegin(),
+  bhReplay:()=>bhCineReplay(), bhSetStar:(id)=>bhCineSetStar(id), bhToggleStar:(id)=>bhCineSetStar(id),
+  setBhLinger:(s)=>{ bhLingerSec = _nvClamp(parseFloat(s)||5, 2, 12); bhCineUpdateUI(); },
+  get bhCineStars(){ return bhCineStars.slice(); }, get bhLingerSec(){ return bhLingerSec; }, get bhStaging(){ return bhStaging; },
+  get bhCineStar(){ return bhCineStars[0]||null; }, get bhCineOn(){ return bhCineOn; },
   get bhCount(){ return blackHoles.length; }, get bhSimOn(){ return bhSimOn; },
   get bhBodiesAlive(){ return bhBodies.filter(b=>b.alive).length; }, get bhBodiesTotal(){ return bhBodies.length; },
   get bhBeltAliveCount(){ return bhBeltAlive ? bhBeltAlive.reduce((a,v)=>a+(v?1:0),0) : 0; },
