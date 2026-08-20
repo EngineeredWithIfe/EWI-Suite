@@ -444,10 +444,13 @@ function injectCSS(){
     background:rgba(14,12,20,.9);backdrop-filter:blur(12px);border:1px solid rgba(255,138,60,.42);
     box-shadow:0 10px 34px rgba(0,0,0,.5)}
   .st-nova.on{display:flex}
-  .st-nova .nv-top{display:flex;align-items:center;gap:10px}
-  .st-nova .nv-title{font-weight:800;font-size:13px;color:#ffd9b8;letter-spacing:.2px;white-space:nowrap}
-  .st-nova .nv-time{font-size:11.5px;color:#9aa3bd;font-variant-numeric:tabular-nums;white-space:nowrap}
-  .st-nova .nv-spacer{flex:1}
+  /* Fluid header: title + phase shrink (ellipsis) and the button group wraps to a
+     second line before anything can be pushed outside the card frame. */
+  .st-nova .nv-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .st-nova .nv-title{font-weight:800;font-size:13px;color:#ffd9b8;letter-spacing:.2px;white-space:nowrap;flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
+  .st-nova .nv-time{font-size:11.5px;color:#9aa3bd;font-variant-numeric:tabular-nums;white-space:nowrap;flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
+  .st-nova .nv-spacer{flex:1 1 0;min-width:0}
+  .st-nova .nv-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end;margin-left:auto;flex:0 0 auto}
   .st-nova .nv-scrub{-webkit-appearance:none;appearance:none;width:100%;height:6px;border-radius:6px;cursor:pointer;
     background:linear-gradient(90deg,#ff8a3c 0%,#e0431f var(--nvp,0%),rgba(255,255,255,.14) var(--nvp,0%))}
   .st-nova .nv-scrub::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;border-radius:50%;
@@ -581,8 +584,11 @@ function injectCSS(){
   .dn-hud{position:absolute;left:12px;bottom:64px;z-index:6;pointer-events:none;
     background:rgba(12,14,24,.62);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);
     border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:9px 12px;font-size:11px;
-    line-height:1.5;color:#c6cde0;max-width:230px;font-variant-numeric:tabular-nums;display:none}
+    line-height:1.5;color:#c6cde0;max-width:230px;font-variant-numeric:tabular-nums;display:none;
+    transition:opacity .24s ease,transform .24s ease}
   .dn-hud.on{display:block}
+  /* The alt/scale details card belongs to the Scene corner — hiding the Scene panel hides it too. */
+  #studioRoot.left-hidden .dn-hud{opacity:0;transform:translateY(6px);pointer-events:none}
   .dn-hud b{color:#fff}
   .dn-hud .phase{display:inline-block;padding:1px 7px;border-radius:20px;font-weight:700;font-size:10px;margin-left:4px}
   .dn-tip{position:absolute;z-index:11;pointer-events:none;transform:translate(-50%,-140%);
@@ -715,11 +721,13 @@ function buildDOM(){
         <span class="nv-title">☀ Sun's End</span>
         <span class="nv-time" id="stNovaPhase">Main sequence · the Sun today</span>
         <span class="nv-spacer"></span>
-        <button id="stNovaPlay" title="Pause / resume playback">⏸</button>
-        <button id="stNovaReplay" title="Replay from the beginning">↺</button>
-        <button id="stNovaFocus" title="Focus lock — hold on your selected object and stop the auto camera" aria-pressed="false">◎ Focus</button>
-        <button id="stNovaExport" title="Export this Sun&rsquo;s End as an MP4 video">⤓ MP4</button>
-        <button id="stNovaExit" title="Exit — return to the normal 3D view">✕</button>
+        <div class="nv-actions">
+          <button id="stNovaPlay" title="Pause / resume playback">⏸</button>
+          <button id="stNovaReplay" title="Replay from the beginning">↺</button>
+          <button id="stNovaFocus" title="Focus lock — hold on your selected object and stop the auto camera" aria-pressed="false">◎ Focus</button>
+          <button id="stNovaExport" title="Export this Sun&rsquo;s End as an MP4 video">⤓ MP4</button>
+          <button id="stNovaExit" title="Exit — return to the normal 3D view">✕</button>
+        </div>
       </div>
       <input type="range" class="nv-scrub" id="stNovaScrub" min="0" max="1000" value="0" step="1" aria-label="Scrub the time-lapse" />
       <div class="nv-note" id="stNovaNote"></div>
@@ -730,14 +738,16 @@ function buildDOM(){
         <span class="nv-title">🎬 <span id="stEcTitle">Event</span></span>
         <span class="nv-time" id="stEcTime"></span>
         <span class="nv-spacer"></span>
-        <span class="ec-idx" id="stEcIdx"></span>
-        <button id="stEcPrev" title="Previous event">←</button>
-        <button id="stEcPlay" title="Pause / resume playback">⏸</button>
-        <button id="stEcReplay" title="Replay this event from the beginning">↺</button>
-        <button id="stEcNext" title="Next event">→</button>
-        <button id="stEcFocus" title="Focus lock — hold on your selected object and stop the auto camera" aria-pressed="false">◎ Focus</button>
-        <button id="stEcExport" title="Export this event scene as an MP4 video">⤓ MP4</button>
-        <button id="stEcExit" title="Exit — return to the normal 3D view">✕</button>
+        <div class="nv-actions">
+          <span class="ec-idx" id="stEcIdx"></span>
+          <button id="stEcPrev" title="Previous event">←</button>
+          <button id="stEcPlay" title="Pause / resume playback">⏸</button>
+          <button id="stEcReplay" title="Replay this event from the beginning">↺</button>
+          <button id="stEcNext" title="Next event">→</button>
+          <button id="stEcFocus" title="Focus lock — hold on your selected object and stop the auto camera" aria-pressed="false">◎ Focus</button>
+          <button id="stEcExport" title="Export this event scene as an MP4 video">⤓ MP4</button>
+          <button id="stEcExit" title="Exit — return to the normal 3D view">✕</button>
+        </div>
       </div>
       <input type="range" class="nv-scrub" id="stEcScrub" min="0" max="1000" value="0" step="1" aria-label="Scrub the event timeline" />
       <div class="nv-note" id="stEcNote"></div>
@@ -887,6 +897,9 @@ function panelShow(side, show, persist){
   if (!panel) return;
   panel.classList.toggle('st-hidden', !show);
   if (tab) tab.classList.toggle('on', !show);
+  // The bottom-left object-details card (alt / scale HUD) lives in the Scene corner:
+  // hide it with the Scene panel and restore it when the panel returns.
+  if (side === 'left') root.classList.toggle('left-hidden', !show);
   if (persist !== false){ try{ localStorage.setItem(PANEL_KEY[side], show ? '1' : '0'); }catch(_){} }
 }
 function panelToggle(side){
