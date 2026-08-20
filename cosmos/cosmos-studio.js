@@ -232,6 +232,7 @@ let cineFocusOn = false;                      // cinematic sub-mode: true = lock
 let cineFocusId = null;                        // id of the focused body of mass
 const cineHist = [];                           // focus history for the ← (back) neighbour step
 let cineVisited = new Set();                    // bodies already toured (→ always hops to nearest UNVISITED)
+let cineParked = false;                        // true = user parked the camera on a body/pin → the auto-director stays yielded (no "bounce back") until they press Auto/Focus
 let gamepadIndex = null;
 let idSeq = 1;
 
@@ -935,6 +936,12 @@ function activeEclipse(jd){
 }
 
 function tickCinematic(dt){
+  // The user parked the camera (clicked a thumbtack, or picked a body in the
+  // Scene list) → hold that POV indefinitely and never let the auto-director
+  // snatch it back. Control returns to the show only when the user explicitly
+  // presses "Auto" (or enters Focus). This is what "the user always keeps
+  // control" means: no automatic bounce-back a few seconds after arriving.
+  if (cineParked) return;
   // Non-restrictive cinematic: if the user is actively steering (recent orbit
   // drag or wheel), yield full control and don't auto-cut. Auto-direction
   // resumes a few seconds after the user lets go.
@@ -1021,6 +1028,7 @@ function cineEnterFocus(id){
   if (!id) return;
   if (camMode!=='cinematic') setCamMode('cinematic');
   cineFocusOn = true; cineFocusId = id;
+  cineParked = false;                              // Focus is a deliberate motion mode → release any park
   cineVisited = new Set([id]); cineHist.length = 0;
   cineLastInput = 0;
   cineUpdateDock();
@@ -1036,8 +1044,14 @@ function cineFocusSelected(){
 }
 function cineAuto(){
   cineFocusOn = false; cineFocusId = null; cineHist.length = 0; cineVisited = new Set();
-  cineNextCut = 0; cineLastInput = 0;
+  cineNextCut = 0; cineLastInput = 0; cineParked = false;   // "Auto" hands control back to the director
   if (camMode!=='cinematic') setCamMode('cinematic'); else cineUpdateDock();
+}
+function cineHold(){
+  // The user explicitly parked the camera on a body/pin → hold this POV and let
+  // the auto-director yield until they choose Auto/Focus again. The camera never
+  // drifts away on its own, so the user always keeps control of where they are.
+  cineParked = true; cineLastInput = performance.now();
 }
 function cineStep(dir){
   if (camMode!=='cinematic') setCamMode('cinematic');
@@ -2254,7 +2268,7 @@ function setCamMode(m){
   // intuitive, not restrictive). In cinematic, the camera is gently
   // auto-directed only while the user isn't actively steering.
   orbit.enabled = true;
-  if (m==='cinematic'){ transform.detach(); cineNextCut = 0; cineLastInput = 0; }
+  if (m==='cinematic'){ transform.detach(); cineNextCut = 0; cineLastInput = 0; cineParked = false; }
   else { cineFocusOn = false; }
   cineUpdateDock();
 }
@@ -2326,6 +2340,16 @@ function focusKey(key){
   orbit.target.copy(tgt);
   camera.position.set(tgt.x + r, tgt.y + r*0.5, tgt.z + r);
 }
+function focusMoon(){
+  // The Moon isn't in planetMeshes (it orbits Earth as its own mesh), so it needs
+  // a dedicated close focus for the Scene-list entry. Snap in tight, matching the
+  // instant focus the other Scene-list rows use.
+  if (!moon) return;
+  const tgt = moon.mesh.getWorldPosition(new THREE.Vector3());
+  const r = 0.6;
+  orbit.target.copy(tgt);
+  camera.position.set(tgt.x + r, tgt.y + r*0.5, tgt.z + r);
+}
 
 function focusObject(o){
   const box = new THREE.Box3().setFromObject(o);
@@ -2384,7 +2408,7 @@ function selectPlanet(key){
   const jd = dateToJD(simDate);
   const v = p ? heliocentric(p, jd) : null;
   inspectorEl.innerHTML = `
-    <div class="st-note"><b>${p?p.name:(key||'Body')}</b></div>` +
+    <div class="st-note"><b>${p?p.name:(key?String(key).charAt(0).toUpperCase()+String(key).slice(1):'Body')}</b></div>` +
     (p ? `<div class="st-field"><label>Heliocentric distance</label>${v.length().toFixed(3)} AU</div>
     <div class="st-field"><label>Orbital period</label>${(Math.pow(p.el[0],1.5)).toFixed(2)} yr</div>
     <div class="st-field"><label>Axial tilt</label>${p.tilt}°</div>
@@ -2449,6 +2473,7 @@ function refreshObjList(){
   const rows = [];
   rows.push(listRow('sun', 'Sun', 0xffcf6b, false));
   for (const p of PLANETS) rows.push(listRow(p.key, p.name, p.color, false));
+  if (moon) rows.push(listRow('moon', 'Moon', 0xb388ff, false));   // Moon gets its own lavender Scene-list entry (matches its purple thumbtack)
   for (const im of imported) rows.push(listRow(im.id, im.name, 0x7c5cff, true, im));
   objListEl.innerHTML = rows.join('');
   objListEl.querySelectorAll('.st-item').forEach(el=>{
@@ -2456,10 +2481,11 @@ function refreshObjList(){
       if (ev.target.classList.contains('x')) return;
       const id = el.dataset.id;
       const im = imported.find(x=>x.id===id);
-      if (im){ focusObject(im.object3d); selectImported(im); }
-      else if (id==='sun'){ if(navMode) return; selectPlanet('Sun'); focusKey('mercury'); }
+      if (id==='moon'){ if (navMode){ navToggleBody('moon'); return; } cineHold(); focusMoon(); selectPlanet('moon'); return; }
+      if (im){ cineHold(); focusObject(im.object3d); selectImported(im); }
+      else if (id==='sun'){ if(navMode) return; cineHold(); selectPlanet('Sun'); focusKey('mercury'); }
       else if (navMode && planetMeshes[id]){ navToggleBody(id); }
-      else { focusKey(id); selectPlanet(id); }
+      else { cineHold(); focusKey(id); selectPlanet(id); }
     });
     const x = el.querySelector('.x');
     if (x) x.addEventListener('click', ()=>{ const im=imported.find(i=>i.id===el.dataset.id); if (im) removeImported(im); });
@@ -3036,6 +3062,7 @@ function dnBodyByKey(key){
   if(!key) return null;
   const k=String(key).toLowerCase();
   if(k==='sun') return sun ? { key:'sun', center:sun.getWorldPosition(new THREE.Vector3()), sceneR:3 } : null;
+  if(k==='moon') return moon ? { key:'moon', center:moon.mesh.getWorldPosition(new THREE.Vector3()), sceneR:0.095 } : null;
   const rec=planetMeshes[k]; if(!rec) return null;
   const p=PLANETS.find(x=>x.key===k);
   return { key:k, center:rec.group.getWorldPosition(new THREE.Vector3()), sceneR:p?p.size:1 };
@@ -3127,9 +3154,22 @@ function dnFlyTo(destWorld, standoff, name, tag){
   const end=destWorld.clone().add(dir.multiplyScalar(standoff));
   end.y += standoff*0.18;
   zoom3D.active=false;
-  dnFlight={ active:true, t:0, dur:dnTempoDur(), tag:tag||null,
+  // Rich, realistic travel. The smootherstep ease-in-out below gives a natural
+  // accelerate → cruise → decelerate arc (a first-/third-person journey rather
+  // than a teleport), and the trip DURATION scales gently with how far we're
+  // going — a hop to the Moon lands quickly; a cross-system leap takes longer —
+  // clamped to a comfortable cinematic band (≈1.1–5.0 s) and still modulated by
+  // the time-tempo slider so the pace stays "rich" for the user.
+  const travel = camera.position.distanceTo(end);
+  const tempoK = 0.7 + dnTempoFrac*0.8;                       // slider pace: 0.7×…1.5×
+  const dur = Math.max(1.1, Math.min(5.0, (0.9 + Math.log10(1+travel)*1.4) * tempoK));
+  // Arriving PARKS the camera on the destination: the cinematic auto-director
+  // yields immediately and stays yielded until the user presses Auto/Focus, so
+  // the POV holds right at the object and never "bounces back" on its own.
+  cineParked = true; cineLastInput = performance.now();
+  dnFlight={ active:true, t:0, dur, tag:tag||null,
     p0:camera.position.clone(), t0:orbit.target.clone(), p1:end, t1:destWorld.clone() };
-  if (name) toast('→ '+name+' · '+fmtSeconds(dnTempoSymbolic())+' tempo · '+dnFlight.dur.toFixed(1)+'s');
+  if (name) toast('→ '+name+' · rich travel · '+dur.toFixed(1)+'s');
 }
 function dnFlyToBodyKey(key){
   const rec=planetMeshes[key]; if(!rec) { if(key==='sun'&&sun) dnFlyTo(sun.getWorldPosition(new THREE.Vector3()),14,'Sun'); return; }
