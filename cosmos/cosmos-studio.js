@@ -222,6 +222,8 @@ let novaFocusOn = false;                       // focus lock — hold on the sel
 // scene scripting (eclipse/shower/planetary-season/deep-time).
 let ecOn = false, ecPlaying = false, ecT = 0, ecIndex = -1;
 const EC_DUR = 30;                             // seconds of wall-clock for one full event playthrough
+let ecAng = 0;                                 // accumulated cinematic orbit angle (rad) — driven by the per-type choreography
+let ecPhase = '';                              // current scripted beat label (mirrors Sun's End phase text)
 let ecBar = null;                              // Event Cinema control card
 let _ecSaved = null;                           // saved scene state for a clean restore
 let ecFocusOn = false;                         // focus lock — hold on the user's selected object
@@ -230,6 +232,37 @@ let ecRec = null;                              // active Event Cinema MediaRecor
 let ecRecComp = null;                          // per-frame compositor for the "scene + cards" export
 let ecT0 = 0;                                  // camera phase seed (keeps motion continuous across seeks)
 let _ecUiAccum = 0;
+// ── Black holes ─────────────────────────────────────────────────────────────
+// A brand-new gravitational-dynamics layer (the ephemeris renderer has none):
+// user-placed black holes become fixed massive attractors, and when the sim is
+// "live" every movable body (planets, the Moon riding Earth, the asteroid belt,
+// and imported objects) leaves its Keplerian rail and falls under Newtonian
+// gravity — superposed inverse-square accelerations integrated with a symplectic
+// (semi-implicit Euler) step and Plummer softening. Trajectories are exact conic
+// sections for the simulated field; the wall-clock rate is compressed for
+// viewing. Newtonian gravity is valid outside the strong-field region — general
+// relativity refines the motion near the horizon (r_s = 2GM/c²), which we surface
+// honestly as a numeric readout rather than integrate.
+const blackHoles = [];                         // [{ id,name,massMsun,rs,rs0,spin,tiltDeg,pov,pos,group,horizon,ring,disk,glow,light,parts,partData,diskSpin,captureR }]
+let bhSeq = 1;
+let bhDraft = null;                            // the not-yet-locked-in black hole being configured/previewed
+let bhSimOn = false;                           // gravity integrator live (bodies falling in)
+let bhBodies = [];                             // [{ kind,ref,pos,vel,mass,alive }] snapshot of movables during a live sim
+let bhBeltVel = null, bhBeltAlive = null, bhBeltBase = null;   // asteroid-belt velocity/alive/original-position buffers
+let _bhSaved = null;                           // pre-sim snapshot for a clean, reversible restore
+let bhCineOn = false, bhCinePlaying = false, bhCineT = 0, bhCineTarget = null, bhCineFocusOn = false;
+let bhBar = null;                              // #stBhBar cinematic control card
+let _bhCineUiAccum = 0;
+const BH_CINE_DUR = 60;                        // seconds of wall-clock for one full black-hole cinematic
+const BH_GM_REF = 26;                          // scene gravitational parameter of the reference (1e6 M☉) hole → watchable free-fall
+const BH_MASS_REF = 1e6;                       // reference mass (M☉) the scene μ is calibrated to
+const BH_RATE = 1.0;                           // physics time multiplier (visual pacing)
+const BH_RS_KM_PER_MSUN = 2.953;               // Schwarzschild radius per solar mass: r_s = 2GM/c² ≈ 2.953 km · (M/M☉)
+let bhDiskTex = null, bhGlowTex = null;        // shared, lazily-built canvas textures
+const _bhReduce = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+// Scratch vectors — reused every frame to avoid per-frame allocation (resilience).
+const _bhA = new THREE.Vector3(), _bhB = new THREE.Vector3(), _bhAcc = new THREE.Vector3(),
+      _bhTan = new THREE.Vector3(), _bhTmp = new THREE.Vector3(), _bhUp = new THREE.Vector3(0,1,0);
 // Remember the last render view (2D sandbox vs 3D studio) on this device, so a
 // refresh / reopened tab restores exactly where the user left off.
 const VIEW_KEY = 'ewi-cosmos-view';            // localStorage: '2d' | '3d'
@@ -483,6 +516,68 @@ function injectCSS(){
   .st-nova.st-ec #stEcExport.nv-rec{color:#ffb3b3;border-color:rgba(255,90,90,.6);background:rgba(255,60,60,.18)}
   .st-nova.st-ec #stEcFocus.on{background:linear-gradient(180deg,#7c5cff,#5a3fd6);border-color:transparent;color:#fff;
     box-shadow:0 0 0 1px rgba(124,92,255,.5),0 6px 18px rgba(90,63,214,.35)}
+  /* Black-hole toolbar button + cinematic bar + config dialog (indigo/amber accent) */
+  .st-btn#stBlackHole.on{background:linear-gradient(180deg,#8a7cff,#4b3fb0);border-color:transparent;color:#fff;
+    box-shadow:0 0 0 1px rgba(138,124,255,.5),0 6px 18px rgba(75,63,176,.4)}
+  .st-nova.st-bh{border-color:rgba(150,130,255,.5);background:rgba(10,10,18,.92)}
+  .st-nova.st-bh .nv-title{color:#e6dcff}
+  .st-nova.st-bh .nv-note b{color:#ffd9a8}
+  .st-nova.st-bh .nv-scrub{background:linear-gradient(90deg,#ffcf9a 0%,#ff8a3c var(--nvp,0%),rgba(255,255,255,.14) var(--nvp,0%))}
+  .st-nova.st-bh .nv-scrub::-webkit-slider-thumb{border-color:#ff8a3c}
+  .st-nova.st-bh .nv-scrub::-moz-range-thumb{border-color:#ff8a3c}
+  .st-nova.st-bh button:hover{background:rgba(150,130,255,.22);border-color:rgba(150,130,255,.6)}
+  .st-nova.st-bh #stBhFocus.on{background:linear-gradient(180deg,#8a7cff,#4b3fb0);border-color:transparent;color:#fff;
+    box-shadow:0 0 0 1px rgba(138,124,255,.5),0 6px 18px rgba(75,63,176,.35)}
+  /* Configure-and-lock-in dialog — right side, above the Inspector */
+  .st-bhform{position:absolute;right:12px;top:64px;z-index:13;width:min(300px,86vw);max-height:calc(100% - 150px);overflow-y:auto;
+    display:flex;flex-direction:column;gap:9px;padding:13px 14px;border-radius:14px;
+    background:rgba(10,10,18,.95);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);
+    border:1px solid rgba(150,130,255,.5);box-shadow:0 18px 54px rgba(0,0,0,.6);
+    animation:bhFormIn .28s cubic-bezier(.22,.61,.36,1)}
+  @keyframes bhFormIn{from{opacity:0;transform:translateY(-8px) scale(.97)}to{opacity:1;transform:none}}
+  @media (prefers-reduced-motion:reduce){.st-bhform{animation:none}}
+  .st-bhform .bhf-h{display:flex;align-items:center;justify-content:space-between;font-weight:800;font-size:13.5px;color:#e6dcff;letter-spacing:.2px}
+  .st-bhform .bhf-x{appearance:none;border:0;background:rgba(255,255,255,.06);color:#c6cde0;width:26px;height:26px;border-radius:7px;font-size:13px;cursor:pointer}
+  .st-bhform .bhf-x:hover{background:rgba(255,90,90,.28);color:#fff}
+  .st-bhform .bhf-row{display:flex;flex-direction:column;gap:3px;font-size:11px;color:#9aa3bd}
+  .st-bhform .bhf-row input[type=text]{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);border-radius:8px;color:#eef1f8;padding:6px 9px;font-size:12.5px}
+  .st-bhform .bhf-row input[type=range]{width:100%;accent-color:#8a7cff;cursor:pointer}
+  .st-bhform .bhf-read{font-size:11px;color:#ffd9a8;font-variant-numeric:tabular-nums;margin-top:-3px}
+  .st-bhform .bhf-xyz{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px}
+  .st-bhform .bhf-xyz label{display:flex;flex-direction:column;gap:3px;font-size:10.5px;color:#9aa3bd}
+  .st-bhform .bhf-xyz input{width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);border-radius:8px;color:#eef1f8;padding:5px 7px;font-size:12px;font-variant-numeric:tabular-nums}
+  .st-bhform select{background:rgba(20,20,32,.96);border:1px solid rgba(255,255,255,.14);border-radius:8px;color:#eef1f8;padding:6px 9px;font-size:12.5px;cursor:pointer}
+  .st-bhform .bhf-note{font-size:10.5px;line-height:1.5;color:#9aa3bd}
+  .st-bhform .bhf-actions{display:flex;gap:8px;margin-top:2px}
+  .st-bhform .bhf-go{flex:1;appearance:none;border:0;border-radius:9px;padding:9px 12px;font-size:12.5px;font-weight:800;cursor:pointer;color:#fff;
+    background:linear-gradient(180deg,#8a7cff,#4b3fb0);box-shadow:0 6px 18px rgba(75,63,176,.4)}
+  .st-bhform .bhf-go:hover{filter:brightness(1.08)}
+  .st-bhform .bhf-cancel{appearance:none;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.05);color:#e8ecf6;border-radius:9px;padding:9px 12px;font-size:12.5px;font-weight:700;cursor:pointer}
+  .st-bhform .bhf-cancel:hover{background:rgba(255,90,90,.2);border-color:rgba(255,90,90,.5)}
+  /* Inspector panel for a locked-in black hole */
+  .st-insp-bh .ib-h{font-weight:800;font-size:13.5px;color:#e6dcff;margin-bottom:7px}
+  .st-insp-bh .ib-row{display:flex;align-items:baseline;justify-content:space-between;gap:8px;font-size:11.5px;color:#9aa3bd;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.05)}
+  .st-insp-bh .ib-row b{color:#eef1f8;font-variant-numeric:tabular-nums;text-align:right}
+  .st-insp-bh .ib-actions{display:flex;gap:8px;margin:10px 0 8px}
+  .st-insp-bh .ib-actions .bhf-go{flex:1;appearance:none;border:0;border-radius:9px;padding:8px 10px;font-size:12px;font-weight:800;cursor:pointer;color:#fff;background:linear-gradient(180deg,#8a7cff,#4b3fb0)}
+  .st-insp-bh .ib-actions .bhf-cancel{appearance:none;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.05);color:#e8ecf6;border-radius:9px;padding:8px 10px;font-size:12px;font-weight:700;cursor:pointer}
+  .st-insp-bh .ib-actions .bhf-cancel:hover{background:rgba(255,90,90,.2);border-color:rgba(255,90,90,.5)}
+  .st-insp-bh .ib-note{font-size:10.5px;line-height:1.5;color:#8a93a8}
+  .st-item.bh .st-dot,.st-dot.st-bhdot{display:flex;align-items:center;justify-content:center;font-size:9px;line-height:1;color:#c9bcff;
+    background:radial-gradient(circle at 40% 35%,#3a2d6e,#0a0714 72%)!important;box-shadow:0 0 7px rgba(138,124,255,.7)}
+  /* Warp-tempo dock / undock — Apple-esque integration into (and segregation out
+     of) the Scene, Inspector, or Time card. */
+  .st-panel.dn-has-tempo .st-scroll{flex:1 1 auto;min-height:0}
+  #dnTempo.dn-docked{position:static!important;left:auto!important;top:auto!important;bottom:auto!important;transform:none!important;
+    flex:none;width:auto;margin:9px;background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.12);flex-wrap:wrap;
+    transition:transform .34s cubic-bezier(.22,.61,.36,1),background .2s,border-color .2s}
+  #dnTempo.dn-docked input[type=range]{flex:1 1 90px;width:auto}
+  #dnTempo.dn-docked-time{margin:0 0 0 6px;width:auto;flex-wrap:nowrap}
+  #dnTempo.dn-dragging{box-shadow:0 18px 46px rgba(0,0,0,.55);border-color:rgba(124,92,255,.6)}
+  .st-left.dn-dock-target,.st-right.dn-dock-target,.st-time.dn-dock-target{
+    outline:2px dashed rgba(124,92,255,.9);outline-offset:3px;
+    box-shadow:0 0 0 4px rgba(124,92,255,.18),0 12px 34px rgba(90,63,214,.28)}
+  @media (prefers-reduced-motion:reduce){#dnTempo,#dnTempo.dn-docked{transition:none!important}}
   @media (max-width:820px){
     .st-panel{width:44vw;max-width:250px;top:60px;bottom:120px}
     .st-hint{display:none}
@@ -639,6 +734,7 @@ function buildDOM(){
         <button class="st-btn" id="stCine" title="Auto-directed cinematic camera">🎬 <span class="lbl">Cinematic</span></button>
       </div>
       <button class="st-btn" id="stNova" title="Sun's End — play a cinematic, sped-up time-lapse of the Sun's death (red giant → planetary nebula → white dwarf). Click to start or stop; drag to change your view while it plays." aria-pressed="false">☀ <span class="lbl">Sun's&nbsp;End</span></button>
+      <button class="st-btn" id="stBlackHole" title="Black Hole — add one or more black holes to the Solar System. Set each hole's mass, size, position, spin, tilt and POV independently, lock in, and watch every body fall in under accurate Newtonian gravity.">◕ <span class="lbl">Black&nbsp;Hole</span></button>
       <div class="grow"></div>
       <button class="st-btn ghost" id="stAdd" title="Add a primitive">＋ <span class="lbl">Add</span></button>
       <button class="st-btn ghost" id="stImport" title="Import a model, image, video, or audio">⬆ <span class="lbl">Import</span></button>
@@ -753,6 +849,23 @@ function buildDOM(){
       <div class="nv-note" id="stEcNote"></div>
     </div>
 
+    <div class="st-nova st-bh" id="stBhBar">
+      <div class="nv-top">
+        <span class="nv-title">◕ <span id="stBhTitle">Black Hole</span></span>
+        <span class="nv-time" id="stBhPhase">Approach</span>
+        <span class="nv-spacer"></span>
+        <div class="nv-actions">
+          <button id="stBhPlay" title="Pause / resume the cinematic">⏸</button>
+          <button id="stBhReplay" title="Replay from the beginning">↺</button>
+          <button id="stBhFocus" title="Focus lock — hold on your selected object and stop the auto camera" aria-pressed="false">◎ Focus</button>
+          <button id="stBhAdd" title="Add another independent black hole">＋ Hole</button>
+          <button id="stBhExit" title="Exit the cinematic — the black hole and its physics keep running">✕</button>
+        </div>
+      </div>
+      <input type="range" class="nv-scrub" id="stBhScrub" min="0" max="1000" value="0" step="1" aria-label="Scrub the black-hole cinematic" />
+      <div class="nv-note" id="stBhNote"></div>
+    </div>
+
     <div class="st-time" id="stTime">
       <button class="st-time-x" id="stTimeCollapse" type="button" title="Collapse into the time pill" aria-label="Collapse the time controls into a pill" aria-expanded="true">⌄</button>
       <input type="date" id="stDate" value="2026-08-17" aria-label="Simulation date" />
@@ -798,6 +911,7 @@ function buildDOM(){
   novaBar     = root.querySelector('#stNovaBar');
   novaFlashEl = root.querySelector('#stNovaFlash');
   ecBar       = root.querySelector('#stEcBar');
+  bhBar       = root.querySelector('#stBhBar');
 
   // event dropdown — grouped by category
   const sel = root.querySelector('#stEvent');
@@ -832,8 +946,7 @@ function buildDOM(){
   root.querySelector('#stNovaReplay').addEventListener('click', novaReplay);
   root.querySelector('#stNovaFocus').addEventListener('click', novaToggleFocus);
   root.querySelector('#stNovaExport').addEventListener('click', novaExportMenu);
-  root.querySelector('#stNovaExit').addEventListener('click', ()=>novaExit());
-  root.querySelector('#stNovaScrub').addEventListener('input', e=>novaSeek((+e.target.value)/1000));
+  root.querySelector('#stNovaExit').addEventListener('click', ()=>novaExit());  root.querySelector('#stNovaScrub').addEventListener('input', e=>novaSeek((+e.target.value)/1000));
   // Event Cinema — immersive player for every Jump-to-an-event scene
   root.querySelector('#stEcPrev').addEventListener('click', ()=>ecStep(-1));
   root.querySelector('#stEcNext').addEventListener('click', ()=>ecStep(1));
@@ -843,6 +956,13 @@ function buildDOM(){
   root.querySelector('#stEcExport').addEventListener('click', ecExportMenu);
   root.querySelector('#stEcExit').addEventListener('click', ()=>ecExit());
   root.querySelector('#stEcScrub').addEventListener('input', e=>ecSeek((+e.target.value)/1000));
+  root.querySelector('#stBlackHole').addEventListener('click', ()=>bhOpenForm());
+  root.querySelector('#stBhPlay').addEventListener('click', bhCineTogglePlay);
+  root.querySelector('#stBhReplay').addEventListener('click', bhCineReplay);
+  root.querySelector('#stBhFocus').addEventListener('click', bhCineToggleFocus);
+  root.querySelector('#stBhAdd').addEventListener('click', ()=>bhOpenForm());
+  root.querySelector('#stBhExit').addEventListener('click', ()=>bhCineExit());
+  root.querySelector('#stBhScrub').addEventListener('input', e=>bhCineSeek((+e.target.value)/1000));
   root.querySelector('#stAdd').addEventListener('click', addPrimitiveMenu);
   root.querySelector('#stImport').addEventListener('click', ()=>root.querySelector('#stFile').click());
   root.querySelector('#stFile').addEventListener('change', e=>{ handleFiles(e.target.files); e.target.value=''; });
@@ -1422,6 +1542,7 @@ function cineFocusList(){
   if (sun) ids.push('sun');
   for (const p of PLANETS) if (planetMeshes[p.key]) ids.push(p.key);
   if (moon) ids.push('moon');
+  for (const bh of blackHoles) ids.push(bh.id);
   for (const im of imported) ids.push(im.id);
   return ids;
 }
@@ -1429,6 +1550,8 @@ function cineCenterOf(id, out){
   if (id==='sun' && sun){ sun.getWorldPosition(out); return 3; }
   if (id==='moon' && moon){ moon.mesh.getWorldPosition(out); return 0.6; }
   if (planetMeshes[id]){ planetMeshes[id].group.getWorldPosition(out); return (PLANETS.find(p=>p.key===id)?.size||1); }
+  const bh = blackHoles.find(x=>x.id===id);
+  if (bh && bh.group){ out.copy(bh.pos); return bh.rs*2.2; }
   const im = imported.find(x=>x.id===id);
   if (im){ const b = new THREE.Box3().setFromObject(im.object3d); b.getCenter(out); return (b.getSize(_cineSize).length()*0.5)||1; }
   return -1;
@@ -1437,6 +1560,7 @@ function cineName(id){
   if (id==='sun') return 'Sun';
   if (id==='moon') return 'Moon';
   const p = PLANETS.find(x=>x.key===id); if (p) return p.name;
+  const bh = blackHoles.find(x=>x.id===id); if (bh) return bh.name;
   const im = imported.find(x=>x.id===id); if (im) return im.name;
   return '—';
 }
@@ -1739,7 +1863,7 @@ function animate(){
     const _povFly = !!(dnFlightSim && dnFlightSim.povOn);
     dnWorldSlow += ((_povFly ? 0.10 : 1) - dnWorldSlow) * Math.min(1, dt*2.4);
 
-    if (playing && !novaOn && !ecOn){
+    if (playing && !novaOn && !ecOn && !bhSimOn){
       simDate = new Date(simDate.getTime() + timeScale*dt*DAY_MS*dnWorldSlow);
       updatePlanets();
     }
@@ -1748,14 +1872,17 @@ function animate(){
       const rec = planetMeshes[p.key];
       rec.spin.rotation.y += (p.rot!==0 ? (1/p.rot) : 0) * dt * 0.6 * dnWorldSlow;
     }
-    if (asteroidBelt) asteroidBelt.rotation.y += dt*0.02;
+    if (asteroidBelt && !bhSimOn) asteroidBelt.rotation.y += dt*0.02;
     if (meteorSys) updateMeteors(dt);
+    // Black-hole gravitational dynamics + visuals (independent of camera mode)
+    bhIntegrate(dt); bhRenderTick(dt); bhBurstTick(dt);
     // NAVLINQ midpoint tracks the bodies as they move (throttled; updates even when paused)
     if (navMode && navSel.size>=2){ _navAccum+=dt; if(_navAccum>0.1){ _navAccum=0; updateNav(); } }
 
     pollGamepad(dt);
     if (novaOn) novaTick(dt);
     else if (ecOn) ecTick(dt);
+    else if (bhCineOn) bhCineTick(dt);
     else if (camMode==='cinematic'){ tickCinematic(dt); cineSyncList(); }
     tickDolly3D(dt);
     deepNavTick(dt);
@@ -2878,26 +3005,88 @@ function ecApply(frac){
 }
 function ecFrameCamera(dt){
   const rad = ecTargetCenter(_cineA);
-  const r = 6 + Math.max(rad, 0.5)*3.2;
-  const ph = (ecT0 + ecT);
-  const ang = ph*0.16;
+  const r0 = 6 + Math.max(rad, 0.5)*3.2;
+  const e = EVENTS[ecIndex];
+  const f = _nvClamp(ecT/EC_DUR, 0, 1);
+  const beat = ecSampleBeats(e, f);
+  ecPhase = beat.phase;
+  // accumulate the orbit angle from the beat's angular speed so the camera has
+  // scripted momentum (slow establish → quicker mid → easing settle), never a
+  // flat constant spin. Frozen while the user is actively steering.
+  ecAng += beat.spin * dt * (2*Math.PI) * (_bhReduce() ? 0.35 : 1);
+  const r = r0 * beat.r;
+  const h = r0 * beat.h + Math.sin(ecAng*0.5)*r0*beat.h*0.06;
+  // a gentle secondary framing offset for two-body events so both bodies stay in shot
   const desired = new THREE.Vector3(
-    _cineA.x + Math.cos(ang)*r,
-    _cineA.y + Math.max(2.4, r*0.30) + Math.sin(ph*0.4)*r*0.10,
-    _cineA.z + Math.sin(ang)*r
+    _cineA.x + Math.cos(ecAng)*r,
+    _cineA.y + Math.max(2.0, h),
+    _cineA.z + Math.sin(ecAng)*r
   );
-  camera.position.lerp(desired, 1 - Math.pow(0.0016, dt));
+  const posK = _bhReduce() ? 0.02 : 0.0016;
+  camera.position.lerp(desired, 1 - Math.pow(posK, dt));
   orbit.target.lerp(_cineA, 1 - Math.pow(0.004, dt));
+}
+// Per-type cinematic choreography — a sequence of eased keyframes so each event
+// kind moves with intent (like Sun's End's scripted phases), not one flat orbit:
+// eclipses push in to totality and recede, showers sweep a night sky, planetary
+// events arc across a season, deep-time epochs breathe in a slow majestic orbit.
+function ecChoreography(e){
+  const t = e && e.type;
+  if (t==='solar' || t==='lunar') return [
+    { at:0.00, r:2.15, h:0.55, spin:0.045, phase:'Alignment forming' },
+    { at:0.30, r:1.30, h:0.34, spin:0.075, phase:'The shadow approaches' },
+    { at:0.50, r:0.95, h:0.22, spin:0.028, phase:(t==='solar'?'Totality — the shadow falls':'Totality — the Moon reddens') },
+    { at:0.72, r:1.30, h:0.32, spin:0.090, phase:'The shadow recedes' },
+    { at:1.00, r:2.25, h:0.56, spin:0.130, phase:'Alignment ends' } ];
+  if (t==='meteor') return [
+    { at:0.00, r:1.75, h:0.16, spin:0.09, phase:'Night falls' },
+    { at:0.42, r:1.45, h:0.11, spin:0.24, phase:'The radiant rises — streaks begin' },
+    { at:0.74, r:1.55, h:0.22, spin:0.33, phase:'The shower peaks' },
+    { at:1.00, r:1.95, h:0.40, spin:0.18, phase:'Dawn approaches' } ];
+  if (t==='planetary' || t==='planet' || t==='opposition' || t==='conjunction') return [
+    { at:0.00, r:2.45, h:0.50, spin:0.075, phase:'The bodies come into frame' },
+    { at:0.50, r:1.70, h:0.34, spin:0.150, phase:'Relative motion over the season' },
+    { at:1.00, r:2.55, h:0.56, spin:0.095, phase:'The configuration passes' } ];
+  if (t==='asteroid' || t==='space') return [
+    { at:0.00, r:2.60, h:0.48, spin:0.06, phase:'Approach' },
+    { at:0.45, r:1.35, h:0.26, spin:0.20, phase:'Closest pass' },
+    { at:1.00, r:2.40, h:0.52, spin:0.11, phase:'Departure' } ];
+  if (t==='weather' || t==='geo' || t==='market') return [
+    { at:0.00, r:2.30, h:0.60, spin:0.05, phase:'Establishing over Earth' },
+    { at:0.5,  r:1.75, h:0.40, spin:0.12, phase:'The region in focus' },
+    { at:1.00, r:2.40, h:0.62, spin:0.07, phase:'A wider view' } ];
+  // cosmic / deep-time — slow, majestic, reverent
+  return [
+    { at:0.00, r:2.80, h:0.72, spin:0.040, phase:'Establishing' },
+    { at:0.5,  r:1.95, h:0.46, spin:0.085, phase:'Drawing closer' },
+    { at:1.00, r:3.00, h:0.80, spin:0.055, phase:'The long view' } ];
+}
+function ecSampleBeats(e, f){
+  const B = ecChoreography(e);
+  if (f<=B[0].at) return B[0];
+  if (f>=B[B.length-1].at) return B[B.length-1];
+  for (let i=0;i<B.length-1;i++){
+    const a=B[i], b=B[i+1];
+    if (f>=a.at && f<=b.at){
+      const u=(b.at-a.at)>1e-6 ? (f-a.at)/(b.at-a.at) : 0;
+      const k=_nvEase(u);   // smoothstep for buttery beat-to-beat transitions
+      return { r:a.r+(b.r-a.r)*k, h:a.h+(b.h-a.h)*k, spin:a.spin+(b.spin-a.spin)*k,
+        phase: u<0.5 ? a.phase : b.phase };
+    }
+  }
+  return B[B.length-1];
 }
 function ecUpdateUI(){
   if (!ecBar || !root) return;
   const e = EVENTS[ecIndex]; if (!e) return;
   const f = _nvClamp(ecT/EC_DUR, 0, 1);
+  ecPhase = ecSampleBeats(e, f).phase;   // keep the beat label in sync whether playing or scrubbing
   const titleEl = root.querySelector('#stEcTitle'); if (titleEl) titleEl.textContent = e.name;
   const timeEl = root.querySelector('#stEcTime');
   if (timeEl){
-    timeEl.textContent = e.cosmic ? e.epoch
+    const when = e.cosmic ? e.epoch
       : (e.date && ecWindowDays(e)>0 ? simDate.toISOString().slice(0,10) : (e.date||''));
+    timeEl.textContent = ecPhase ? (ecPhase + ' · ' + when) : when;
   }
   const idxEl = root.querySelector('#stEcIdx'); if (idxEl) idxEl.textContent = (ecIndex+1)+' / '+EVENTS.length;
   const scrub = root.querySelector('#stEcScrub');
@@ -2924,7 +3113,7 @@ function ecEnter(i){
   ecFocusKey = ecFrameKeyFor(e);
   ecFocusOn = false;
   const fbtn = root && root.querySelector('#stEcFocus'); if (fbtn){ fbtn.classList.remove('on'); fbtn.setAttribute('aria-pressed','false'); }
-  ecOn = true; ecPlaying = true; ecT = 0; ecT0 = performance.now()/1000; cineLastInput = 0;
+  ecOn = true; ecPlaying = true; ecT = 0; ecT0 = performance.now()/1000; ecAng = Math.PI/2; ecPhase = ''; cineLastInput = 0;
   // per-type scene dressing
   if (e.type==='meteor') startMeteors();
   if (!e.cosmic && Array.isArray(e.where)) earthPin(e.where[0], e.where[1], 0xff5a7a, e.name, true);
@@ -3071,6 +3260,566 @@ function ecRecComposite(){
     const now = performance.now();
     if (!c.building && now-c.lastBuild>280){ c.lastBuild=now; novaRecBuildOverlay(c); }
   }catch(_){}
+}
+
+/* ---------------------------------------------------------------------------
+   5c. Black holes — a gravitational-dynamics layer with its own cinematic.
+   Create → configure/verify → lock-in → the cinematic begins and every body
+   falls in under accurate Newtonian gravity. Each hole's characteristics
+   (mass, size, X·Y·Z, spin, disk tilt, POV) are fully independent.
+   ------------------------------------------------------------------------- */
+// True Schwarzschild radius (km) for the honest scientific readout.
+function bhTrueRsKm(massMsun){ return BH_RS_KM_PER_MSUN * massMsun; }
+function bhFmtKm(km){
+  if (km >= 9.461e12) return (km/9.461e12).toPrecision(3)+' ly';
+  if (km >= 1.496e8)  return (km/1.496e8).toPrecision(3)+' AU';
+  if (km >= 1e6)      return (km/1e6).toPrecision(3)+' Gm';
+  return Math.round(km).toLocaleString()+' km';
+}
+// Suggested on-screen horizon radius (scene units) from mass — a gentle log map
+// so a 1 M☉ stellar hole and a 10-billion-M☉ giant are both usably visible.
+function bhSuggestRadius(massMsun){
+  const l = Math.log10(Math.max(1, massMsun));         // 0 … 10
+  return _nvClamp(0.6 + l*0.95, 0.5, 14);
+}
+// Scene gravitational parameter μ = G·M for this hole (linear in mass → a ∝ M,
+// exactly as Newton's law requires; the shape of every trajectory is correct).
+function bhMu(bh){ return BH_GM_REF * (bh.massMsun / BH_MASS_REF); }
+
+function bhMakeDiskTexture(){
+  if (bhDiskTex) return bhDiskTex;
+  const s = 256, cv = document.createElement('canvas'); cv.width=cv.height=s;
+  const g = cv.getContext('2d');
+  const cx=s/2, cy=s/2;
+  const grad = g.createRadialGradient(cx,cy, s*0.14, cx,cy, s*0.5);
+  grad.addColorStop(0.00, 'rgba(255,255,255,0.00)');   // clear centre (the horizon shows through)
+  grad.addColorStop(0.16, 'rgba(220,238,255,0.95)');   // hot inner edge — blue-white
+  grad.addColorStop(0.34, 'rgba(255,232,180,0.92)');   // yellow
+  grad.addColorStop(0.58, 'rgba(255,150,60,0.78)');    // orange
+  grad.addColorStop(0.80, 'rgba(190,60,30,0.42)');     // cooler outer — red
+  grad.addColorStop(1.00, 'rgba(90,20,10,0.00)');
+  g.fillStyle = grad; g.beginPath(); g.arc(cx,cy,s*0.5,0,Math.PI*2); g.fill();
+  // relativistic-beaming hint — one side brighter (approaching material blueshifts)
+  const beam = g.createLinearGradient(0,0,s,0);
+  beam.addColorStop(0, 'rgba(255,255,255,0.18)');
+  beam.addColorStop(0.5,'rgba(255,255,255,0.00)');
+  beam.addColorStop(1, 'rgba(10,10,20,0.14)');
+  g.globalCompositeOperation='overlay'; g.fillStyle=beam;
+  g.beginPath(); g.arc(cx,cy,s*0.5,0,Math.PI*2); g.fill();
+  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace;
+  bhDiskTex = t; return t;
+}
+function bhMakeGlowTexture(){
+  if (bhGlowTex) return bhGlowTex;
+  const s = 128, cv = document.createElement('canvas'); cv.width=cv.height=s;
+  const g = cv.getContext('2d'); const c=s/2;
+  const grad = g.createRadialGradient(c,c,0, c,c,c);
+  grad.addColorStop(0.00,'rgba(190,214,255,0.55)');
+  grad.addColorStop(0.30,'rgba(150,120,255,0.22)');
+  grad.addColorStop(0.70,'rgba(90,60,160,0.06)');
+  grad.addColorStop(1.00,'rgba(0,0,0,0.00)');
+  g.fillStyle=grad; g.fillRect(0,0,s,s);
+  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace;
+  bhGlowTex = t; return t;
+}
+// Build (or rebuild) the visual for a black hole: pure-black event horizon, a
+// thin photon ring, a rotating emissive accretion disk (hot inner → cool outer),
+// an additive lensing-glow halo, a subtle disk light, and inspiralling particle
+// streams.
+function bhBuild(bh){
+  const grp = new THREE.Group();
+  grp.position.copy(bh.pos);
+  const rs = bh.rs;
+  // event horizon — an utterly black sphere that occludes everything behind it
+  const horizon = new THREE.Mesh(
+    new THREE.SphereGeometry(rs, 48, 32),
+    new THREE.MeshBasicMaterial({ color:0x000000 })
+  );
+  horizon.renderOrder = 3;
+  grp.add(horizon);
+  // photon ring — a thin bright torus hugging the horizon, in the disk plane
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(rs*1.08, rs*0.03, 12, 96),
+    new THREE.MeshBasicMaterial({ color:0xfff1cf, transparent:true, opacity:0.9,
+      blending:THREE.AdditiveBlending, depthWrite:false })
+  );
+  ring.rotation.x = Math.PI/2;
+  ring.renderOrder = 4;
+  grp.add(ring);
+  // accretion disk — emissive annulus painted with a hot radial gradient
+  const disk = new THREE.Mesh(
+    new THREE.RingGeometry(rs*1.5, rs*6.2, 128, 6),
+    new THREE.MeshBasicMaterial({ map:bhMakeDiskTexture(), transparent:true, opacity:0.95,
+      side:THREE.DoubleSide, blending:THREE.AdditiveBlending, depthWrite:false })
+  );
+  disk.rotation.x = Math.PI/2;
+  disk.renderOrder = 2;
+  grp.add(disk);
+  // lensing-glow halo — a camera-facing additive sprite
+  const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map:bhMakeGlowTexture(),
+    transparent:true, blending:THREE.AdditiveBlending, depthWrite:false, opacity:0.85 }));
+  glow.scale.setScalar(rs*11);
+  glow.renderOrder = 1;
+  grp.add(glow);
+  // a faint warm light from the disk so approaching bodies catch its glow
+  const light = new THREE.PointLight(0xffd9a8, 0.0, rs*60, 2.0);
+  grp.add(light);
+  // inspiralling particle streams
+  const N = _bhReduce() ? 90 : 280;
+  const pgeo = new THREE.BufferGeometry();
+  const ppos = new Float32Array(N*3);
+  const partData = new Array(N);
+  for (let i=0;i<N;i++){
+    const ang = Math.random()*Math.PI*2;
+    const rad = rs*(1.6 + Math.random()*5.0);
+    const z   = (Math.random()-0.5)*rs*0.5;
+    partData[i] = { ang, rad, z, spd:0.5+Math.random()*0.9, drop:0.04+Math.random()*0.10, rad0:rad };
+    ppos[i*3]=Math.cos(ang)*rad; ppos[i*3+1]=z; ppos[i*3+2]=Math.sin(ang)*rad;
+  }
+  pgeo.setAttribute('position', new THREE.BufferAttribute(ppos,3));
+  const parts = new THREE.Points(pgeo, new THREE.PointsMaterial({ color:0xffcf9a, size:1.5,
+    sizeAttenuation:false, transparent:true, opacity:0.8, blending:THREE.AdditiveBlending, depthWrite:false }));
+  parts.renderOrder = 2;
+  grp.add(parts);
+
+  bh.group=grp; bh.horizon=horizon; bh.ring=ring; bh.disk=disk; bh.glow=glow; bh.light=light;
+  bh.parts=parts; bh.partData=partData; bh.diskSpin=(bh.spin>=0?1:-1);
+  bhApplyTilt(bh);
+  scene.add(grp);
+  return bh;
+}
+// Orient the disk / ring / particle plane to the hole's tilt (degrees).
+function bhApplyTilt(bh){
+  const t = (bh.tiltDeg||0)*DEG;
+  bh.group.rotation.set(t, 0, 0);
+}
+// Resize an existing hole's meshes after a config change (draft editing / growth).
+function bhUpdateMesh(bh){
+  const rs = bh.rs;
+  bh.horizon.geometry.dispose();
+  bh.horizon.geometry = new THREE.SphereGeometry(rs, 48, 32);
+  bh.ring.geometry.dispose();
+  bh.ring.geometry = new THREE.TorusGeometry(rs*1.08, rs*0.03, 12, 96);
+  bh.disk.geometry.dispose();
+  bh.disk.geometry = new THREE.RingGeometry(rs*1.5, rs*6.2, 128, 6);
+  bh.glow.scale.setScalar(rs*11);
+  bh.captureR = rs*0.92;
+  bh.group.position.copy(bh.pos);
+  bhApplyTilt(bh);
+}
+function bhDispose(bh){
+  if (!bh.group) return;
+  scene.remove(bh.group);
+  bh.group.traverse(o=>{ if(o.geometry) o.geometry.dispose(); if(o.material){ (Array.isArray(o.material)?o.material:[o.material]).forEach(m=>m.dispose&&m.dispose()); } });
+  bh.group=null;
+}
+// Per-frame visual life — spin the disk, swirl the particles inward, pulse the
+// glow, keep the disk light lit while the sim runs. Cheap; runs whenever holes
+// exist. Honors reduced-motion.
+function bhRenderTick(dt){
+  const holes = bhDraft ? blackHoles.concat([bhDraft]) : blackHoles;
+  if (!holes.length) return;
+  const calm = _bhReduce() ? 0.25 : 1;
+  for (const bh of holes){
+    if (!bh.group) continue;
+    bh.disk.rotation.z += dt*0.6*calm*bh.diskSpin;
+    bh.ring.rotation.z += dt*0.9*calm*bh.diskSpin;
+    // glow shimmer
+    const pulse = 0.72 + Math.sin(performance.now()*0.001 + bh.id.length)*0.10*calm;
+    bh.glow.material.opacity = pulse;
+    bh.light.intensity = bhSimOn ? 1.1 : 0.5;
+    // inspiralling particles
+    const pos = bh.parts.geometry.attributes.position.array;
+    const pd = bh.partData; const rsMin = bh.rs*1.02;
+    for (let i=0;i<pd.length;i++){
+      const p = pd[i];
+      p.ang += dt*p.spd*calm*bh.diskSpin;
+      p.rad -= dt*p.drop*calm*(1 + (bh.rs/Math.max(p.rad,0.001)));
+      if (p.rad <= rsMin){ p.rad = p.rad0; p.ang = Math.random()*Math.PI*2; }
+      pos[i*3]=Math.cos(p.ang)*p.rad; pos[i*3+1]=p.z*(p.rad/p.rad0); pos[i*3+2]=Math.sin(p.ang)*p.rad;
+    }
+    bh.parts.geometry.attributes.position.needsUpdate = true;
+  }
+}
+
+/* ---- Gravity integrator (symplectic Euler + Plummer softening) ---- */
+function bhSnapshotBody(kind, ref, pos, mass){ return { kind, ref, pos, vel:new THREE.Vector3(), mass, alive:true }; }
+function bhSimStart(){
+  if (bhSimOn || !blackHoles.length) return;
+  // snapshot everything we perturb, so removal restores the Solar System exactly
+  _bhSaved = {
+    simDate: new Date(simDate.getTime()), playing,
+    planetVis: PLANETS.map(p=>({ key:p.key, vis: planetMeshes[p.key]?planetMeshes[p.key].group.visible:true })),
+    importedPos: imported.map(im=>({ id:im.id, p:im.object3d.position.clone(), vis:im.object3d.visible })),
+    beltVisible: asteroidBelt?asteroidBelt.visible:true
+  };
+  bhBodies = [];
+  for (const p of PLANETS){ const rec = planetMeshes[p.key]; if (!rec || !rec.group.visible) continue;
+    bhBodies.push(bhSnapshotBody('planet', rec, rec.group.position, p.mass||1e-9)); }
+  for (const im of imported){ if (!im.object3d.visible) continue;
+    bhBodies.push(bhSnapshotBody('imported', im, im.object3d.position, 3e-6)); }
+  // asteroid belt — integrate the whole point cloud
+  if (asteroidBelt){
+    const arr = asteroidBelt.geometry.attributes.position.array;
+    bhBeltBase = Float32Array.from(arr);
+    bhBeltVel = new Float32Array(arr.length);
+    bhBeltAlive = new Uint8Array(arr.length/3).fill(1);
+  }
+  bhSeedVelocities();
+  playing = false; if (playBtn) playBtn.textContent='▶';
+  try{ setRealtime(false); }catch(_){}
+  bhSimOn = true;
+}
+// Seed each body with a sub-circular tangential velocity about the nearest hole,
+// so bodies spiral gracefully inward (a decaying ellipse) rather than dropping
+// radially — physically faithful and visually elegant.
+function bhSeedVelocities(){
+  const seed = (pos, vel) => {
+    // nearest hole
+    let bh=null, best=Infinity;
+    for (const h of blackHoles){ const d=pos.distanceTo(h.pos); if(d<best){ best=d; bh=h; } }
+    if (!bh) return;
+    _bhA.copy(pos).sub(bh.pos);                 // radial (hole → body)
+    const d = Math.max(_bhA.length(), 0.001);
+    const vC = Math.sqrt(bhMu(bh)/d);           // local circular speed
+    _bhTan.crossVectors(_bhUp, _bhA);           // a tangent in the ecliptic
+    if (_bhTan.lengthSq()<1e-6) _bhTan.set(1,0,0);
+    _bhTan.normalize();
+    vel.copy(_bhTan).multiplyScalar(0.62*vC);   // 0.62 → inspiral
+  };
+  for (const b of bhBodies) seed(b.pos, b.vel);
+  if (bhBeltBase && bhBeltVel){
+    for (let i=0;i<bhBeltAlive.length;i++){
+      _bhTmp.set(bhBeltBase[i*3], bhBeltBase[i*3+1], bhBeltBase[i*3+2]);
+      const v = new THREE.Vector3(); seed(_bhTmp, v);
+      bhBeltVel[i*3]=v.x; bhBeltVel[i*3+1]=v.y; bhBeltVel[i*3+2]=v.z;
+    }
+  }
+}
+// Net gravitational acceleration at `p` from all holes → out. Softened.
+function bhAccel(p, out){
+  out.set(0,0,0);
+  for (const bh of blackHoles){
+    _bhTmp.copy(bh.pos).sub(p);
+    const soft = bh.rs*bh.rs*0.36;
+    const r2 = _bhTmp.lengthSq() + soft;
+    const inv = bhMu(bh) / (r2 * Math.sqrt(r2));
+    out.addScaledVector(_bhTmp, inv);
+  }
+  return out;
+}
+function bhCapture(pos){
+  for (const bh of blackHoles){ if (pos.distanceTo(bh.pos) <= bh.captureR) return bh; }
+  return null;
+}
+function bhGrow(bh, addMassMsun){
+  bh.massMsun += Math.max(0, addMassMsun);
+  bh.rs = Math.min(bh.rs*1.012, bh.rs0*1.7);
+  bhUpdateMesh(bh);
+}
+function bhIntegrate(dt){
+  if (!bhSimOn) return;
+  const steps = 4;
+  const h = (dt*BH_RATE)/steps;
+  for (let s=0;s<steps;s++){
+    for (const b of bhBodies){
+      if (!b.alive) continue;
+      bhAccel(b.pos, _bhAcc);
+      b.vel.addScaledVector(_bhAcc, h);
+      b.pos.addScaledVector(b.vel, h);
+      const hole = bhCapture(b.pos);
+      if (hole){
+        b.alive=false;
+        if (b.kind==='planet'){ b.ref.group.visible=false; if(b.ref.orbitLine) b.ref.orbitLine.visible=false; }
+        else if (b.kind==='imported'){ b.ref.object3d.visible=false; }
+        bhBurst(b.pos, hole);
+        bhGrow(hole, b.mass);
+      }
+    }
+    if (bhBeltBase && bhBeltVel){
+      const arr = asteroidBelt.geometry.attributes.position.array;
+      for (let i=0;i<bhBeltAlive.length;i++){
+        if (!bhBeltAlive[i]) continue;
+        _bhTmp.set(arr[i*3], arr[i*3+1], arr[i*3+2]);
+        bhAccel(_bhTmp, _bhAcc);
+        bhBeltVel[i*3]  += _bhAcc.x*h; bhBeltVel[i*3+1]+= _bhAcc.y*h; bhBeltVel[i*3+2]+= _bhAcc.z*h;
+        arr[i*3]  += bhBeltVel[i*3]*h; arr[i*3+1]+= bhBeltVel[i*3+1]*h; arr[i*3+2]+= bhBeltVel[i*3+2]*h;
+        _bhTmp.set(arr[i*3], arr[i*3+1], arr[i*3+2]);
+        const hole = bhCapture(_bhTmp);
+        if (hole){ bhBeltAlive[i]=0; arr[i*3]=hole.pos.x; arr[i*3+1]=hole.pos.y; arr[i*3+2]=hole.pos.z; }
+      }
+      asteroidBelt.geometry.attributes.position.needsUpdate = true;
+    }
+  }
+}
+// A brief additive flash where a body crosses the horizon.
+const bhBurstList = [];
+function bhBurst(pos, bh){
+  const N = 24;
+  const geo = new THREE.BufferGeometry();
+  const pp = new Float32Array(N*3);
+  const vv = [];
+  for (let i=0;i<N;i++){ const a=Math.random()*Math.PI*2, e=(Math.random()-0.5)*Math.PI;
+    const dir=new THREE.Vector3(Math.cos(a)*Math.cos(e), Math.sin(e), Math.sin(a)*Math.cos(e));
+    pp[i*3]=pos.x; pp[i*3+1]=pos.y; pp[i*3+2]=pos.z; vv.push(dir.multiplyScalar(2+Math.random()*4)); }
+  geo.setAttribute('position', new THREE.BufferAttribute(pp,3));
+  const mat = new THREE.PointsMaterial({ color:0xfff4d8, size:3, sizeAttenuation:false, transparent:true,
+    opacity:1, blending:THREE.AdditiveBlending, depthWrite:false });
+  const pts = new THREE.Points(geo, mat); pts.renderOrder=5; scene.add(pts);
+  const dur=0.7;
+  const cleanup = ()=>{ scene.remove(pts); geo.dispose(); mat.dispose(); };
+  bhBurstList.push({ life:0, dur, geo, mat, vv, N, cleanup });
+}
+function bhBurstTick(dt){
+  for (let i=bhBurstList.length-1;i>=0;i--){
+    const b=bhBurstList[i]; b.life+=dt;
+    const arr=b.geo.attributes.position.array;
+    for (let j=0;j<b.N;j++){ arr[j*3]+=b.vv[j].x*dt; arr[j*3+1]+=b.vv[j].y*dt; arr[j*3+2]+=b.vv[j].z*dt; }
+    b.geo.attributes.position.needsUpdate=true; b.mat.opacity=Math.max(0,1-b.life/b.dur);
+    if (b.life>=b.dur){ b.cleanup(); bhBurstList.splice(i,1); }
+  }
+}
+function bhSimStop(restore){
+  if (!bhSimOn) return;
+  bhSimOn = false;
+  if (restore && _bhSaved){
+    for (const pv of _bhSaved.planetVis){ const rec=planetMeshes[pv.key]; if(rec){ rec.group.visible=pv.vis; if(rec.orbitLine) rec.orbitLine.visible=pv.vis; } }
+    for (const ip of _bhSaved.importedPos){ const im=imported.find(x=>x.id===ip.id); if(im){ im.object3d.position.copy(ip.p); im.object3d.visible=ip.vis; } }
+    if (asteroidBelt && bhBeltBase){ const arr=asteroidBelt.geometry.attributes.position.array; arr.set(bhBeltBase); asteroidBelt.geometry.attributes.position.needsUpdate=true; asteroidBelt.visible=_bhSaved.beltVisible; }
+    simDate = _bhSaved.simDate; try{ updatePlanets(); }catch(_){}
+  }
+  bhBodies = []; bhBeltVel=null; bhBeltAlive=null; bhBeltBase=null; _bhSaved=null;
+  for (let i=bhBurstList.length-1;i>=0;i--){ bhBurstList[i].cleanup(); bhBurstList.splice(i,1); }
+}
+
+/* ---- Black-hole cinematic — its own "Sun's End" ---- */
+function bhCineFocusTarget(out){
+  if (bhCineFocusOn && selected){
+    if (selected.type==='planet'){ const rec=planetMeshes[selected.key]; if(rec&&rec.group.visible){ out.copy(rec.group.position); return; } }
+    else if (selected.type==='imported' && selected.im && selected.im.object3d.visible){ out.copy(selected.im.object3d.position); return; }
+    else if (selected.type==='bh' && selected.bh.group){ out.copy(selected.bh.pos); return; }
+  }
+  if (bhCineTarget && bhCineTarget.group) out.copy(bhCineTarget.pos); else out.set(0,0,0);
+}
+function bhCineTick(dt){
+  if (bhCinePlaying){ bhCineT += dt; if (bhCineT>=BH_CINE_DUR){ bhCineT=BH_CINE_DUR; bhCinePlaying=false; } }
+  const bh = bhCineTarget;
+  if (bh && bh.group){
+    bhCineFocusTarget(_bhA);
+    if (bhCineFocusOn){ orbit.target.lerp(_bhA, 1-Math.pow(0.02,dt)); }
+    else if (performance.now()-cineLastInput >= 3200){
+      const f = _nvClamp(bhCineT/BH_CINE_DUR, 0, 1);
+      const rs = bh.rs;
+      const calm = _bhReduce()?0.4:1;
+      // scripted beats: wide establish → push in → close orbit on infall → pull back
+      let dist, elev;
+      if (f < 0.15){ dist = rs*16 + 20; elev = 0.5; }
+      else if (f < 0.5){ const u=_nvEase((f-0.15)/0.35); dist=_nvLerp(rs*16+20, rs*7.5, u); elev=_nvLerp(0.5,0.28,u); }
+      else if (f < 0.85){ dist = rs*7.5; elev = 0.28; }
+      else { const u=_nvEase((f-0.85)/0.15); dist=_nvLerp(rs*7.5, rs*13+16, u); elev=_nvLerp(0.28,0.44,u); }
+      // POV shaping
+      if (bh.pov==='faceon') elev = 1.15;
+      else if (bh.pov==='edgeon') elev = 0.06;
+      else if (bh.pov==='wide') dist *= 1.6;
+      const ang = bhCineT*0.14*calm;
+      _bhB.set(bh.pos.x + Math.cos(ang)*dist, bh.pos.y + dist*elev, bh.pos.z + Math.sin(ang)*dist);
+      camera.position.lerp(_bhB, 1-Math.pow(0.0018,dt));
+      orbit.target.lerp(bh.pos, 1-Math.pow(0.004,dt));
+    }
+  }
+  _bhCineUiAccum += dt; if (_bhCineUiAccum>0.1){ _bhCineUiAccum=0; bhCineUpdateUI(); }
+}
+function bhCineUpdateUI(){
+  if (!bhBar || !root || !bhCineTarget) return;
+  const bh = bhCineTarget;
+  const f = _nvClamp(bhCineT/BH_CINE_DUR, 0, 1);
+  const phase = f<0.15 ? 'Approach — the system as it was'
+    : f<0.5 ? 'Infall begins — bodies leave their orbits'
+    : f<0.85 ? 'Accretion — matter spirals past the horizon'
+    : 'Aftermath — a rearranged system';
+  const remain = bhBodies.filter(b=>b.alive).length;
+  const titleEl = root.querySelector('#stBhTitle'); if (titleEl) titleEl.textContent = bh.name;
+  const timeEl = root.querySelector('#stBhPhase'); if (timeEl) timeEl.textContent = phase + ' · ' + remain + ' bodies remain';
+  const scrub = root.querySelector('#stBhScrub'); if (scrub){ scrub.value=String(Math.round(f*1000)); scrub.style.setProperty('--nvp',(f*100).toFixed(1)+'%'); }
+  const play = root.querySelector('#stBhPlay'); if (play) play.textContent = bhCinePlaying?'⏸':'▶';
+  const note = root.querySelector('#stBhNote');
+  if (note){
+    note.innerHTML = `<b>${bh.name}</b> · ${bh.massMsun.toLocaleString(undefined,{maximumSignificantDigits:4})} M☉ · `+
+      `event horizon r<sub>s</sub> = 2GM/c² ≈ <b>${bhFmtKm(bhTrueRsKm(bh.massMsun))}</b>. `+
+      `Bodies follow accurate Newtonian gravity (superposed inverse-square attraction) — exact conic-section trajectories for the simulated field; the timescale is compressed for viewing. `+
+      `Newtonian mechanics hold outside the strong-field region; general relativity refines the motion near the horizon.`;
+  }
+}
+function bhEnterCinema(bh){
+  if (!bh) return;
+  if (novaOn) novaExit();
+  if (ecOn) ecExit();
+  bhCineTarget = bh; bhCineOn = true; bhCinePlaying = true; bhCineT = 0; bhCineFocusOn = false; cineLastInput = 0;
+  if (camMode==='cinematic') setCamMode('explore');
+  if (dnPinsVisible) dnTogglePins(false);
+  bhSimStart();
+  const fbtn = root && root.querySelector('#stBhFocus'); if (fbtn){ fbtn.classList.remove('on'); fbtn.setAttribute('aria-pressed','false'); }
+  if (bhBar) bhBar.classList.add('on');
+  // establishing shot
+  const d = bh.rs*16 + 22;
+  camera.position.set(bh.pos.x, bh.pos.y + d*0.5, bh.pos.z + d);
+  orbit.target.copy(bh.pos);
+  bhCineUpdateUI();
+  toast('Black-hole cinematic · '+bh.name+' — the simulation begins · drag to change your view · ✕ to exit');
+}
+function bhCineExit(){
+  if (!bhCineOn) return;
+  bhCineOn = false; bhCinePlaying = false; bhCineFocusOn = false;
+  if (bhBar) bhBar.classList.remove('on');
+  toast('Exited the cinematic — the black hole and its physics keep running in the 3D view');
+}
+function bhCineTogglePlay(){ if(!bhCineOn) return; if(!bhCinePlaying && bhCineT>=BH_CINE_DUR) bhCineT=0; bhCinePlaying=!bhCinePlaying; cineLastInput=0; bhCineUpdateUI(); }
+function bhCineReplay(){ if(!bhCineOn) return; bhCineT=0; bhCinePlaying=true; cineLastInput=0; bhCineUpdateUI(); }
+function bhCineSeek(frac){ if(!bhCineOn) return; bhCinePlaying=false; bhCineT=_nvClamp(frac,0,1)*BH_CINE_DUR; bhCineUpdateUI(); }
+function bhCineToggleFocus(){
+  if (!bhCineOn) return;
+  bhCineFocusOn = !bhCineFocusOn;
+  const b = root && root.querySelector('#stBhFocus');
+  if (b){ b.classList.toggle('on', bhCineFocusOn); b.setAttribute('aria-pressed', String(bhCineFocusOn)); }
+  toast(bhCineFocusOn ? 'Focus lock on — holding on your selected object' : 'Focus lock off — the camera resumes its cinematic path');
+}
+
+/* ---- Create → configure → lock-in flow ---- */
+function bhDefaultPos(){
+  // a spot out beyond the orbit target, in the outer system
+  const t = orbit ? orbit.target.clone() : new THREE.Vector3();
+  if (t.length() < 2) t.set(18, 4, 10);
+  return t;
+}
+function bhOpenForm(){
+  if (bhCineOn) bhCineExit();
+  const existing = root.querySelector('#stBhForm');
+  if (existing){ bhCancelForm(); return; }
+  // create a live draft the user can see and tune before locking in
+  const p = bhDefaultPos();
+  const massMsun = 1e6;
+  bhDraft = { id:'bh'+(bhSeq), name:'Black Hole '+(bhSeq), massMsun, rs:bhSuggestRadius(massMsun),
+    rs0:bhSuggestRadius(massMsun), spin:0.6, tiltDeg:18, pov:'orbit', pos:p.clone(), draft:true };
+  bhDraft.captureR = bhDraft.rs*0.92;
+  bhBuild(bhDraft);
+  bhFormBuild();
+  // frame the draft
+  const d = bhDraft.rs*15 + 20;
+  if (camMode==='cinematic') setCamMode('explore');
+  camera.position.set(p.x, p.y + d*0.5, p.z + d);
+  orbit.target.copy(p);
+  toast('Configure your black hole — set its mass, size, position, spin, tilt and POV, then Lock in & begin');
+}
+function bhFormBuild(){
+  const d = bhDraft;
+  const card = document.createElement('div');
+  card.id='stBhForm'; card.className='st-bhform'; card.setAttribute('role','dialog');
+  card.setAttribute('aria-label','Configure a new black hole');
+  const rsKm = bhFmtKm(bhTrueRsKm(d.massMsun));
+  card.innerHTML =
+    `<div class="bhf-h"><span>◕ New black hole</span><button id="stBhCancel" class="bhf-x" type="button" title="Cancel" aria-label="Cancel">✕</button></div>`+
+    `<label class="bhf-row"><span>Name</span><input id="bhfName" type="text" value="${d.name}" aria-label="Black hole name"></label>`+
+    `<label class="bhf-row"><span>Mass — log₁₀(M☉)</span><input id="bhfMass" type="range" min="0" max="10" step="0.05" value="${Math.log10(d.massMsun).toFixed(2)}" aria-label="Mass, log base 10 of solar masses"></label>`+
+    `<div class="bhf-read" id="bhfMassRead">${d.massMsun.toLocaleString(undefined,{maximumSignificantDigits:4})} M☉ · r<sub>s</sub> ≈ ${rsKm}</div>`+
+    `<label class="bhf-row"><span>Size (scene)</span><input id="bhfSize" type="range" min="0.4" max="16" step="0.1" value="${d.rs.toFixed(1)}" aria-label="On-screen horizon size in scene units"></label>`+
+    `<div class="bhf-xyz">`+
+      `<label><span>X</span><input id="bhfX" type="number" step="0.5" value="${d.pos.x.toFixed(1)}" aria-label="Position X"></label>`+
+      `<label><span>Y</span><input id="bhfY" type="number" step="0.5" value="${d.pos.y.toFixed(1)}" aria-label="Position Y"></label>`+
+      `<label><span>Z</span><input id="bhfZ" type="number" step="0.5" value="${d.pos.z.toFixed(1)}" aria-label="Position Z"></label>`+
+    `</div>`+
+    `<label class="bhf-row"><span>Spin a*</span><input id="bhfSpin" type="range" min="-0.998" max="0.998" step="0.002" value="${d.spin}" aria-label="Dimensionless spin"></label>`+
+    `<label class="bhf-row"><span>Disk tilt°</span><input id="bhfTilt" type="range" min="0" max="90" step="1" value="${d.tiltDeg}" aria-label="Accretion disk tilt in degrees"></label>`+
+    `<label class="bhf-row"><span>POV</span><select id="bhfPov" aria-label="Cinematic point of view">`+
+      `<option value="orbit">Cinematic orbit</option><option value="edgeon">Edge-on</option><option value="faceon">Face-on / top</option><option value="wide">Wide</option></select></label>`+
+    `<div class="bhf-note">Newtonian gravity drives every body toward the hole with exact inverse-square attraction; each hole's characteristics are independent. r<sub>s</sub> = 2GM/c². GR refines motion near the horizon.</div>`+
+    `<div class="bhf-actions"><button id="stBhLock" class="bhf-go" type="button">Lock in &amp; begin ▸</button><button id="stBhCancel2" class="bhf-cancel" type="button">Cancel</button></div>`;
+  root.appendChild(card);
+  const q = s=>card.querySelector(s);
+  const readMass = ()=>{ const m=Math.pow(10, parseFloat(q('#bhfMass').value)); q('#bhfMassRead').innerHTML = m.toLocaleString(undefined,{maximumSignificantDigits:4})+' M☉ · r<sub>s</sub> ≈ '+bhFmtKm(bhTrueRsKm(m)); return m; };
+  q('#bhfName').addEventListener('input', ()=>bhApplyDraft());
+  q('#bhfMass').addEventListener('input', ()=>{ readMass(); bhApplyDraft(true); });
+  q('#bhfSize').addEventListener('input', ()=>bhApplyDraft());
+  ['#bhfX','#bhfY','#bhfZ'].forEach(s=>q(s).addEventListener('input', ()=>bhApplyDraft()));
+  q('#bhfSpin').addEventListener('input', ()=>bhApplyDraft());
+  q('#bhfTilt').addEventListener('input', ()=>bhApplyDraft());
+  q('#bhfPov').addEventListener('change', ()=>bhApplyDraft());
+  q('#stBhLock').addEventListener('click', bhLockIn);
+  q('#stBhCancel').addEventListener('click', bhCancelForm);
+  q('#stBhCancel2').addEventListener('click', bhCancelForm);
+}
+function bhApplyDraft(massChanged){
+  const d = bhDraft; if (!d) return; const card = root.querySelector('#stBhForm'); if (!card) return;
+  const q = s=>card.querySelector(s);
+  d.name = q('#bhfName').value || d.name;
+  const newMass = Math.pow(10, parseFloat(q('#bhfMass').value)||0);
+  if (massChanged){
+    d.massMsun = newMass;
+    // suggest a matching size unless the user has dragged Size themselves
+    const suggested = bhSuggestRadius(newMass);
+    q('#bhfSize').value = suggested.toFixed(1);
+  } else {
+    d.massMsun = newMass;
+  }
+  d.rs = parseFloat(q('#bhfSize').value)||d.rs; d.rs0 = d.rs;
+  d.pos.set(parseFloat(q('#bhfX').value)||0, parseFloat(q('#bhfY').value)||0, parseFloat(q('#bhfZ').value)||0);
+  d.spin = parseFloat(q('#bhfSpin').value)||0; d.diskSpin = d.spin>=0?1:-1;
+  d.tiltDeg = parseFloat(q('#bhfTilt').value)||0;
+  d.pov = q('#bhfPov').value || 'orbit';
+  bhUpdateMesh(d);
+}
+function bhLockIn(){
+  const d = bhDraft; if (!d) return;
+  bhApplyDraft();
+  d.draft = false;
+  blackHoles.push(d);
+  bhSeq++;
+  bhDraft = null;
+  const card = root.querySelector('#stBhForm'); if (card) card.remove();
+  refreshObjList();
+  bhEnterCinema(d);
+}
+function bhCancelForm(){
+  const card = root.querySelector('#stBhForm'); if (card) card.remove();
+  if (bhDraft){ bhDispose(bhDraft); bhDraft=null; }
+  toast('Cancelled');
+}
+function bhRemove(bh){
+  const i = blackHoles.indexOf(bh); if (i<0) return;
+  if (bhCineOn && bhCineTarget===bh) bhCineExit();
+  bhDispose(bh);
+  blackHoles.splice(i,1);
+  if (selected && selected.type==='bh' && selected.bh===bh){ selected=null; if(inspectorEl) inspectorEl.innerHTML='<div class="st-note">Select a body or imported object to inspect and transform it.</div>'; }
+  if (!blackHoles.length) bhSimStop(true);   // last hole gone → restore the Solar System
+  refreshObjList();
+  toast('Removed '+bh.name+(blackHoles.length?'':' — Solar System restored'));
+}
+function selectBlackHole(bh){
+  selected = { type:'bh', bh };
+  if (transform) transform.detach();
+  highlightList(bh.id);
+  bhInspector(bh);
+}
+function focusBlackHole(bh){
+  if (!bh.group) return;
+  const d = bh.rs*14 + 16;
+  orbit.target.copy(bh.pos);
+  camera.position.set(bh.pos.x + d, bh.pos.y + d*0.5, bh.pos.z + d);
+}
+function bhInspector(bh){
+  if (!inspectorEl) return;
+  const rsKm = bhFmtKm(bhTrueRsKm(bh.massMsun));
+  inspectorEl.innerHTML =
+    `<div class="st-insp-bh">`+
+    `<div class="ib-h">◕ ${bh.name}</div>`+
+    `<div class="ib-row"><span>Mass</span><b>${bh.massMsun.toLocaleString(undefined,{maximumSignificantDigits:5})} M☉</b></div>`+
+    `<div class="ib-row"><span>Schwarzschild r<sub>s</sub></span><b>${rsKm}</b></div>`+
+    `<div class="ib-row"><span>Spin a*</span><b>${bh.spin.toFixed(3)}</b></div>`+
+    `<div class="ib-row"><span>Position</span><b>${bh.pos.x.toFixed(1)}, ${bh.pos.y.toFixed(1)}, ${bh.pos.z.toFixed(1)}</b></div>`+
+    `<div class="ib-actions"><button id="stBhInspPlay" class="bhf-go" type="button">▸ Cinematic</button><button id="stBhInspDel" class="bhf-cancel" type="button">Remove</button></div>`+
+    `<div class="ib-note">r<sub>s</sub> = 2GM/c². Bodies fall in under accurate Newtonian gravity — exact conic-section paths for the simulated field; timescale compressed for viewing.</div>`+
+    `</div>`;
+  const pl = inspectorEl.querySelector('#stBhInspPlay'); if (pl) pl.addEventListener('click', ()=>bhEnterCinema(bh));
+  const dl = inspectorEl.querySelector('#stBhInspDel'); if (dl) dl.addEventListener('click', ()=>bhRemove(bh));
 }
 
 /* ---------------------------------------------------------------------------
@@ -3290,13 +4039,16 @@ function refreshObjList(){
   rows.push(listRow('sun', 'Sun', 0xffcf6b, false));
   for (const p of PLANETS) rows.push(listRow(p.key, p.name, p.color, false));
   if (moon) rows.push(listRow('moon', 'Moon', 0xb388ff, false));   // Moon gets its own lavender Scene-list entry (matches its purple thumbtack)
+  for (const bh of blackHoles) rows.push(listRow(bh.id, bh.name, 0x140a22, true, null, true));   // black holes — first-class Scene objects
   for (const im of imported) rows.push(listRow(im.id, im.name, 0x7c5cff, true, im));
   objListEl.innerHTML = rows.join('');
   objListEl.querySelectorAll('.st-item').forEach(el=>{
     el.addEventListener('click', ev=>{
       if (ev.target.classList.contains('x')) return;
       const id = el.dataset.id;
+      const bh = blackHoles.find(x=>x.id===id);
       const im = imported.find(x=>x.id===id);
+      if (bh){ cineHold(); focusBlackHole(bh); selectBlackHole(bh); return; }
       if (id==='moon'){ if (navMode){ navToggleBody('moon'); return; } cineHold(); focusMoon(); selectPlanet('moon'); return; }
       if (im){ cineHold(); focusObject(im.object3d); selectImported(im); }
       else if (id==='sun'){ if(navMode) return; cineHold(); selectPlanet('Sun'); focusKey('mercury'); }
@@ -3304,14 +4056,21 @@ function refreshObjList(){
       else { cineHold(); focusKey(id); selectPlanet(id); }
     });
     const x = el.querySelector('.x');
-    if (x) x.addEventListener('click', ()=>{ const im=imported.find(i=>i.id===el.dataset.id); if (im) removeImported(im); });
+    if (x) x.addEventListener('click', ()=>{
+      const bh = blackHoles.find(b=>b.id===el.dataset.id);
+      if (bh){ bhRemove(bh); return; }
+      const im=imported.find(i=>i.id===el.dataset.id); if (im) removeImported(im);
+    });
   });
   cineListKey = undefined; cineSyncList();   // the list was re-rendered \u2014 re-apply the cinematic "now showing" highlight
 }
-function listRow(id,name,color,rm,im){
+function listRow(id,name,color,rm,im,isBH){
   const hex = '#'+color.toString(16).padStart(6,'0');
+  const dot = isBH
+    ? `<span class="st-dot st-bhdot" style="background:${hex}" aria-hidden="true">◕</span>`
+    : `<span class="st-dot" style="background:${hex}"></span>`;
   return `<div class="st-item" data-id="${id}">
-    <span class="st-dot" style="background:${hex}"></span><span>${name}</span>${rm?'<span class="x" title="Remove">✕</span>':''}</div>`;
+    ${dot}<span>${name}</span>${rm?'<span class="x" title="Remove">✕</span>':''}</div>`;
 }
 function highlightList(id){
   objListEl.querySelectorAll('.st-item').forEach(el=>el.classList.toggle('sel', el.dataset.id===String(id)));
@@ -3743,6 +4502,7 @@ const AIRPORTS = {
 
 let dnInited=false, dnPins=[], dnStars=[], dnPinsVisible=true, dnFlight=null, dnPlane=null, dnFlightArc=null;
 let dnHudEl=null, dnTipEl=null, dnTempoEl=null, dnTempoFrac=0.45, dnWorldSlow=1, dnZTop=12;
+let dnTempoDock=null;                           // null (floating) | 'left' | 'right' | 'time' — which pop-up card the Warp-tempo card is integrated into
 const dnPanels={};
 const _dnRay=new THREE.Raycaster();
 const _dnV=new THREE.Vector3(), _dnV2=new THREE.Vector3(), _dnV3=new THREE.Vector3();
@@ -4300,20 +5060,69 @@ function dnBuildTempo(){
   const rng=dnTempoEl.querySelector('input'), lbl=dnTempoEl.querySelector('#dnTempoLbl');
   const upd=()=>{ dnTempoFrac=(+rng.value)/1000; lbl.textContent=fmtSeconds(dnTempoSymbolic()); };
   rng.addEventListener('input',upd); upd();
-  // Draggable by its grip (like every deep-nav card) so it never sits on top of
-  // another panel and traps its contents. Position persists on-device.
+  // ---- Apple-esque dock / undock: drag the Warp-tempo card by its grip into
+  // one of the three pop-up cards (Scene · Inspector · Time) to INTEGRATE it,
+  // or drag it back out to SEGREGATE it, with a smooth FLIP transition. The
+  // free position and the dock choice both persist on-device. ----
   const TKEY='ewiCosmosDN_tempo';
+  const grip=dnTempoEl.querySelector('.dn-grip');
+  const DOCK_HOST={ left:'.st-left', right:'.st-right', time:'.st-time' };
+  const DOCK_NAME={ left:'Scene', right:'Inspector', time:'Time' };
+  const _dnClearHostFlags=()=>{ ['.st-left','.st-right'].forEach(s=>{ const el=root&&root.querySelector(s); if(el) el.classList.remove('dn-has-tempo'); }); };
+  const _dnSetDockHint=(key)=>{ Object.values(DOCK_HOST).forEach(s=>{ const el=root&&root.querySelector(s); if(el) el.classList.remove('dn-dock-target'); });
+    if(key){ const el=root&&root.querySelector(DOCK_HOST[key]); if(el) el.classList.add('dn-dock-target'); } };
+  const _dnDropTargetAt=(x,y)=>{ const prev=dnTempoEl.style.pointerEvents; dnTempoEl.style.pointerEvents='none';
+    let el=document.elementFromPoint(x,y); dnTempoEl.style.pointerEvents=prev; if(!el) return null;
+    const host=el.closest('.st-left,.st-right,.st-time'); if(!host) return null;
+    return host.classList.contains('st-left')?'left':host.classList.contains('st-right')?'right':'time'; };
+  const _dnFlip=(el,mutate)=>{ if(_bhReduce()){ mutate(); return; }
+    const first=el.getBoundingClientRect(); mutate(); const last=el.getBoundingClientRect();
+    const dx=first.left-last.left, dy=first.top-last.top;
+    const sx=last.width?first.width/last.width:1, sy=last.height?first.height/last.height:1;
+    el.style.transformOrigin='top left'; el.style.transition='none';
+    el.style.transform=`translate(${dx}px,${dy}px) scale(${sx},${sy})`;
+    void el.getBoundingClientRect();
+    el.style.transition='transform .34s cubic-bezier(.22,.61,.36,1)'; el.style.transform='';
+    const done=()=>{ el.style.transition=''; el.style.transformOrigin=''; el.removeEventListener('transitionend',done); };
+    el.addEventListener('transitionend',done); };
+  const _dnPersist=()=>{ try{ localStorage.setItem(TKEY, JSON.stringify({ dock:dnTempoDock,
+      x:parseFloat(dnTempoEl.style.left)||null, y:parseFloat(dnTempoEl.style.top)||null })); }catch(_){}; };
+  function _dnDoDock(key, animate){
+    const hostSel=DOCK_HOST[key]; const host=root&&root.querySelector(hostSel); if(!host) return;
+    const apply=()=>{ _dnClearHostFlags();
+      dnTempoEl.classList.add('dn-docked'); dnTempoEl.classList.toggle('dn-docked-time', key==='time');
+      dnTempoEl.style.left=''; dnTempoEl.style.top=''; dnTempoEl.style.bottom=''; dnTempoEl.style.transform='';
+      if(key!=='time') host.classList.add('dn-has-tempo');
+      host.appendChild(dnTempoEl); };
+    if(animate===false) apply(); else _dnFlip(dnTempoEl, apply);
+    dnTempoDock=key; _dnPersist();
+  }
+  function _dnUndock(){ if(!dnTempoDock) return; const r=dnTempoEl.getBoundingClientRect();
+    _dnClearHostFlags(); root.appendChild(dnTempoEl);
+    dnTempoEl.classList.remove('dn-docked','dn-docked-time');
+    dnTempoEl.style.transform='none'; dnTempoEl.style.bottom='auto';
+    dnTempoEl.style.left=r.left+'px'; dnTempoEl.style.top=r.top+'px'; dnTempoDock=null; }
+  // restore saved dock / position
   try{ const st=JSON.parse(localStorage.getItem(TKEY)||'{}');
-    if(st.x!=null){ dnTempoEl.style.left=st.x+'px'; dnTempoEl.style.top=st.y+'px'; dnTempoEl.style.bottom='auto'; dnTempoEl.style.transform='none'; } }catch(_){}
-  const grip=dnTempoEl.querySelector('.dn-grip'); let gx=0,gy=0,gdrag=false;
-  grip.addEventListener('pointerdown',e=>{ gdrag=true; const r=dnTempoEl.getBoundingClientRect();
+    if(st.dock && DOCK_HOST[st.dock]){ _dnDoDock(st.dock, false); }
+    else if(st.x!=null){ dnTempoEl.style.left=st.x+'px'; dnTempoEl.style.top=st.y+'px'; dnTempoEl.style.bottom='auto'; dnTempoEl.style.transform='none'; }
+  }catch(_){}
+  let gx=0,gy=0,gdrag=false,gcand=null;
+  grip.addEventListener('pointerdown',e=>{ gdrag=true; gcand=null;
+    if(dnTempoDock) _dnUndock();                                     // segregate in place — no visual jump
+    const r=dnTempoEl.getBoundingClientRect();
     dnTempoEl.style.transform='none'; dnTempoEl.style.bottom='auto'; dnTempoEl.style.left=r.left+'px'; dnTempoEl.style.top=r.top+'px';
+    dnTempoEl.classList.add('dn-dragging');
     gx=e.clientX-r.left; gy=e.clientY-r.top; grip.style.cursor='grabbing'; try{grip.setPointerCapture(e.pointerId);}catch(_){}; e.preventDefault(); });
   grip.addEventListener('pointermove',e=>{ if(!gdrag) return; const w=window.innerWidth,h=window.innerHeight;
     const nx=Math.max(4,Math.min(w-dnTempoEl.offsetWidth-4,e.clientX-gx)), ny=Math.max(56,Math.min(h-40,e.clientY-gy));
-    dnTempoEl.style.left=nx+'px'; dnTempoEl.style.top=ny+'px'; });
-  grip.addEventListener('pointerup',e=>{ gdrag=false; grip.style.cursor='grab'; try{grip.releasePointerCapture(e.pointerId);}catch(_){}
-    try{ localStorage.setItem(TKEY,JSON.stringify({x:parseFloat(dnTempoEl.style.left)||0,y:parseFloat(dnTempoEl.style.top)||0})); }catch(_){}; });
+    dnTempoEl.style.left=nx+'px'; dnTempoEl.style.top=ny+'px';
+    gcand=_dnDropTargetAt(e.clientX,e.clientY); _dnSetDockHint(gcand); });
+  grip.addEventListener('pointerup',e=>{ if(!gdrag) return; gdrag=false; grip.style.cursor='grab';
+    dnTempoEl.classList.remove('dn-dragging'); _dnSetDockHint(null); try{grip.releasePointerCapture(e.pointerId);}catch(_){}
+    if(gcand){ _dnDoDock(gcand, true); toast('Warp tempo docked into the '+DOCK_NAME[gcand]+' card — drag its ⠿ grip to pull it back out'); }
+    else _dnPersist();
+    gcand=null; });
 }
 function initDeepNav(){
   if(dnInited) return; dnInited=true;
@@ -4359,6 +5168,7 @@ window.__cosmosStudio = { open:openStudio, close, heliocentric, auToScene, PLANE
   dnPanel:(id)=>dnPanel(id), dnParseZoom:(s)=>dnParseZoom(s), dnTogglePins:()=>dnTogglePins(),
   dnFlyToKey:(k)=>dnFlyToBodyKey(k), get dnFocus(){ return dnNearestBody()?.key||null; },
   get dnPinCount(){ return dnPins.length; }, get dnFlying(){ return !!(dnFlight&&dnFlight.active); },
+  get dnTempoDock(){ return dnTempoDock; },
   // Sun's End (stellar-death cinematic) hooks
   novaToggle:()=>novaToggle(), novaEnter:()=>novaEnter(), novaExit:()=>novaExit(),
   novaSeek:(f)=>novaSeek(f), novaPlay:()=>novaTogglePlay(), novaReplay:()=>novaReplay(),
