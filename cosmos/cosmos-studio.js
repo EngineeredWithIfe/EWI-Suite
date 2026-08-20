@@ -405,7 +405,24 @@ function injectCSS(){
   #studioRoot.time-collapsed .st-pill{opacity:1;transform:translateX(-50%) scale(1);pointer-events:auto}
   .st-time input[type=date]{background:rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.12);color:#e8ecf6;border-radius:8px;padding:5px 7px;font-size:12.5px}
   .st-time input[type=range]{width:120px;accent-color:#7c5cff}
-  .st-hint{position:absolute;right:276px;bottom:14px;z-index:4;font-size:11px;color:#8b93ad;max-width:230px;text-align:right;pointer-events:none}
+  .st-hint{position:absolute;right:276px;bottom:14px;z-index:4;font-size:11px;color:#8b93ad;max-width:250px;text-align:right;pointer-events:none;
+    display:flex;align-items:flex-start;justify-content:flex-end;gap:6px}
+  .st-hint-txt{pointer-events:none;text-align:right;max-width:230px}
+  .st-hint-x{pointer-events:auto;flex:none;appearance:none;border:1px solid rgba(255,255,255,.14);
+    background:rgba(12,14,24,.72);color:#c6cde0;width:18px;height:18px;border-radius:50%;font-size:10px;line-height:1;
+    cursor:pointer;display:inline-flex;align-items:center;justify-content:center;margin-top:1px;
+    -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);transition:background .15s,color .15s,border-color .15s}
+  .st-hint-x:hover{background:rgba(255,90,90,.28);color:#fff;border-color:transparent}
+  .st-hint-x:focus-visible{outline:2px solid #7c5cff;outline-offset:2px}
+  .st-help-chip{position:absolute;right:14px;bottom:14px;z-index:4;display:none;align-items:center;justify-content:center;
+    width:30px;height:30px;border-radius:50%;appearance:none;border:1px solid rgba(255,255,255,.14);
+    background:rgba(12,14,24,.72);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+    color:#c6cde0;font:700 14px -apple-system,system-ui,sans-serif;cursor:pointer;
+    box-shadow:0 6px 20px rgba(0,0,0,.35);transition:background .15s,color .15s,border-color .15s,transform .15s}
+  .st-help-chip:hover{background:rgba(124,92,255,.22);border-color:rgba(124,92,255,.55);color:#fff;transform:translateY(-1px)}
+  .st-help-chip:focus-visible{outline:2px solid #7c5cff;outline-offset:2px}
+  #studioRoot.st-hint-off .st-hint{display:none}
+  #studioRoot.st-hint-off .st-help-chip{display:inline-flex}
   .st-drop{position:absolute;inset:52px 0 0 0;z-index:8;display:none;align-items:center;justify-content:center;
     background:rgba(90,63,214,.22);border:3px dashed rgba(124,92,255,.7);margin:12px;border-radius:18px;
     font-size:20px;font-weight:800;color:#fff;pointer-events:none}
@@ -610,7 +627,7 @@ function injectCSS(){
   #stTabLeft{left:0;border-left:0;border-radius:0 13px 13px 0}
   #stTabRight{right:0;border-right:0;border-radius:13px 0 0 13px}
   /* Immersive view — one control clears every overlay for a pure, clean sky. */
-  #studioRoot.immersive .st-panel,#studioRoot.immersive .st-time,#studioRoot.immersive .st-pill,#studioRoot.immersive .st-hint,
+  #studioRoot.immersive .st-panel,#studioRoot.immersive .st-time,#studioRoot.immersive .st-pill,#studioRoot.immersive .st-hint,#studioRoot.immersive .st-help-chip,
   #studioRoot.immersive .st-badge,#studioRoot.immersive .st-cine,#studioRoot.immersive .st-cine-pl,
   #studioRoot.immersive .st-nova,#studioRoot.immersive .dn-hud,#studioRoot.immersive .st-tab,
   #studioRoot.immersive .dn-panel{opacity:0;pointer-events:none;transition:opacity .28s ease}
@@ -888,9 +905,11 @@ function buildDOM(){
       <span class="pill-txt" id="stPillTxt">—</span>
     </button>
 
-    <div class="st-hint">
-      Explore: drag orbit · scroll / pinch zoom · right-drag or two-finger pan · <b>1/2/3</b> front·top·side view · <b>G</b> slide · <b>H</b> immersive · <b>W/E/R</b> move·rotate·scale · <b>F</b> focus · <b>Del</b> remove · gamepad supported
+    <div class="st-hint" id="stHint">
+      <span class="st-hint-txt">Explore: drag orbit · scroll / pinch zoom · right-drag or two-finger pan · <b>1/2/3</b> front·top·side view · <b>G</b> slide · <b>H</b> immersive · <b>W/E/R</b> move·rotate·scale · <b>F</b> focus · <b>Del</b> remove · gamepad supported</span>
+      <button class="st-hint-x" id="stHintHide" type="button" title="Hide these tips" aria-label="Hide the on-screen exploration tips">✕</button>
     </div>
+    <button class="st-help-chip" id="stHintShow" type="button" title="Show the exploration tips" aria-label="Show the exploration tips">?</button>
 
     <div class="st-drop">Drop a model, image, video, or audio to place it in 3D</div>
     <div class="st-toast" id="stToast"></div>
@@ -987,6 +1006,12 @@ function buildDOM(){
   root.querySelector('#stRestore').addEventListener('click', ()=>toggleImmersive(false));
   root.querySelector('#stTimeCollapse').addEventListener('click', ()=>timeDockSet(true));
   root.querySelector('#stTimePill').addEventListener('click', ()=>timeDockSet(false));
+  // Exploration tips — dismissible; the choice (hint ⇄ “?” chip) persists on-device.
+  const _hintApply = (off)=>{ root.classList.toggle('st-hint-off', off);
+    try{ localStorage.setItem('ewiCosmosHint', off?'off':'on'); }catch(_){} };
+  try{ if(localStorage.getItem('ewiCosmosHint')==='off') root.classList.add('st-hint-off'); }catch(_){}
+  root.querySelector('#stHintHide').addEventListener('click', ()=>_hintApply(true));
+  root.querySelector('#stHintShow').addEventListener('click', ()=>_hintApply(false));
   playBtn.addEventListener('click', ()=>{ setRealtime(false); playing=!playing; playBtn.textContent = playing?'⏸':'▶'; });
   dateInput.addEventListener('change', ()=>{ setRealtime(false); simDate = new Date(dateInput.value+'T00:00:00Z'); updatePlanets(); });
   const SPD=[0,1,2,5,15,45,120,365,1460];
