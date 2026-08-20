@@ -257,6 +257,9 @@ const BH_CINE_DUR = 60;                        // seconds of wall-clock for one 
 const BH_GM_REF = 26;                          // scene gravitational parameter of the reference (1e6 M☉) hole → watchable free-fall
 const BH_MASS_REF = 1e6;                       // reference mass (M☉) the scene μ is calibrated to
 const BH_RATE = 1.0;                           // physics time multiplier (visual pacing)
+const BH_DRAG = 0.10;                          // accretion inspiral: fraction of orbital speed bled per second (per unit
+                                               // proximity) to the disk / dynamical friction / gravitational radiation, so
+                                               // every bound body's orbit decays and it is inevitably drawn in and absorbed
 const BH_RS_KM_PER_MSUN = 2.953;               // Schwarzschild radius per solar mass: r_s = 2GM/c² ≈ 2.953 km · (M/M☉)
 let bhDiskTex = null, bhGlowTex = null;        // shared, lazily-built canvas textures
 const _bhReduce = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
@@ -3503,9 +3506,18 @@ function bhSimStart(){
     bhBodies.push(bhSnapshotBody('planet', rec, rec.group.position, p.mass||1e-9)); }
   for (const im of imported){ if (!im.object3d.visible) continue;
     bhBodies.push(bhSnapshotBody('imported', im, im.object3d.position, 3e-6)); }
-  // asteroid belt — integrate the whole point cloud
+  // asteroid belt — integrate the whole point cloud. Bake its world transform into the
+  // positions and zero the transform, so the infall and horizon test run in the same
+  // world frame as the holes (the belt is rotationally symmetric, so this is visually
+  // identical and fully reversible).
   if (asteroidBelt){
+    asteroidBelt.updateMatrixWorld();
     const arr = asteroidBelt.geometry.attributes.position.array;
+    const m = asteroidBelt.matrixWorld;
+    for (let i=0;i<arr.length;i+=3){ _bhB.set(arr[i],arr[i+1],arr[i+2]).applyMatrix4(m);
+      arr[i]=_bhB.x; arr[i+1]=_bhB.y; arr[i+2]=_bhB.z; }
+    asteroidBelt.position.set(0,0,0); asteroidBelt.rotation.set(0,0,0); asteroidBelt.scale.set(1,1,1);
+    asteroidBelt.updateMatrixWorld(); asteroidBelt.geometry.attributes.position.needsUpdate = true;
     bhBeltBase = Float32Array.from(arr);
     bhBeltVel = new Float32Array(arr.length);
     bhBeltAlive = new Uint8Array(arr.length/3).fill(1);
@@ -3531,7 +3543,9 @@ function bhSeedVelocities(){
     _bhTan.crossVectors(_bhUp, _bhA);           // a tangent in the ecliptic
     if (_bhTan.lengthSq()<1e-6) _bhTan.set(1,0,0);
     _bhTan.normalize();
-    vel.copy(_bhTan).multiplyScalar(0.62*vC);   // 0.62 → inspiral
+    // Tangential (for the spiral) + an inward radial kick, so even the most distant
+    // bodies begin their plunge at once and are drawn in and absorbed within the view.
+    vel.copy(_bhTan).multiplyScalar(0.55*vC).addScaledVector(_bhA, -0.5*vC/d);
   };
   for (const b of bhBodies) seed(b.pos, b.vel);
   if (bhBeltBase && bhBeltVel){
@@ -3572,18 +3586,24 @@ function bhIntegrate(dt){
       if (!b.alive) continue;
       bhAccel(b.pos, _bhAcc);
       b.vel.addScaledVector(_bhAcc, h);
+      // Nearest hole — drives both the accretion drag and the tidal destruction below.
+      let near=null, nd=Infinity;
+      for (const hb of blackHoles){ const d=b.pos.distanceTo(hb.pos); if(d<nd){ nd=d; near=hb; } }
+      // Accretion inspiral — the body bleeds orbital energy to the hole (disk drag /
+      // dynamical friction / gravitational radiation), so its orbit decays and it is
+      // inevitably drawn to the horizon and absorbed, never left in a stable orbit.
+      // Distance-scaled: a gentle drift far out, an accelerating plunge close in.
+      if (near){ const drag = BH_DRAG*(1 + near.rs*2/Math.max(nd, near.rs));
+        b.vel.multiplyScalar(Math.max(0, 1 - drag*h)); }
       b.pos.addScaledVector(b.vel, h);
       // Progressive tidal destruction — the body is torn apart (shrinks) and sheds a
       // debris stream toward the hole as it crosses into the tidal zone, then is
       // annihilated at the horizon. Faithful to spaghettification, cheap to draw.
-      { let near=null, nd=Infinity;
-        for (const hb of blackHoles){ const d=b.pos.distanceTo(hb.pos); if(d<nd){ nd=d; near=hb; } }
-        if (near){ const tidal=near.rs*4;
-          if (nd<tidal){ const f=_nvClamp((tidal-nd)/(tidal-near.captureR),0,1);
-            const o = b.kind==='planet'? b.ref.group : (b.kind==='imported'? b.ref.object3d : null);
-            if (o) o.scale.setScalar(Math.max(0.03, b.baseScale*(1-0.92*f)));
-            b.shred += h; if (b.shred>0.03){ b.shred=0; bhShred(b.pos, near, f); }
-          }
+      if (near){ const tidal=near.rs*4;
+        if (nd<tidal){ const f=_nvClamp((tidal-nd)/(tidal-near.captureR),0,1);
+          const o = b.kind==='planet'? b.ref.group : (b.kind==='imported'? b.ref.object3d : null);
+          if (o) o.scale.setScalar(Math.max(0.03, b.baseScale*(1-0.92*f)));
+          b.shred += h; if (b.shred>0.03){ b.shred=0; bhShred(b.pos, near, f); }
         }
       }
       const hole = bhCapture(b.pos);
@@ -3599,12 +3619,17 @@ function bhIntegrate(dt){
       const arr = asteroidBelt.geometry.attributes.position.array;
       for (let i=0;i<bhBeltAlive.length;i++){
         if (!bhBeltAlive[i]) continue;
-        _bhTmp.set(arr[i*3], arr[i*3+1], arr[i*3+2]);
-        bhAccel(_bhTmp, _bhAcc);
+        _bhB.set(arr[i*3], arr[i*3+1], arr[i*3+2]);
+        bhAccel(_bhB, _bhAcc);            // _bhB (not _bhTmp) — bhAccel uses _bhTmp as scratch, so aliasing would zero the pull
         bhBeltVel[i*3]  += _bhAcc.x*h; bhBeltVel[i*3+1]+= _bhAcc.y*h; bhBeltVel[i*3+2]+= _bhAcc.z*h;
+        // Same accretion inspiral drag — each grain of the belt spirals in and is absorbed.
+        { let bn=null, bnd=Infinity;
+          for (const hb of blackHoles){ const d=_bhB.distanceTo(hb.pos); if(d<bnd){ bnd=d; bn=hb; } }
+          if (bn){ const dr=Math.max(0, 1 - BH_DRAG*(1 + bn.rs*2/Math.max(bnd, bn.rs))*h);
+            bhBeltVel[i*3]*=dr; bhBeltVel[i*3+1]*=dr; bhBeltVel[i*3+2]*=dr; } }
         arr[i*3]  += bhBeltVel[i*3]*h; arr[i*3+1]+= bhBeltVel[i*3+1]*h; arr[i*3+2]+= bhBeltVel[i*3+2]*h;
-        _bhTmp.set(arr[i*3], arr[i*3+1], arr[i*3+2]);
-        const hole = bhCapture(_bhTmp);
+        _bhB.set(arr[i*3], arr[i*3+1], arr[i*3+2]);
+        const hole = bhCapture(_bhB);
         if (hole){ bhBeltAlive[i]=0; arr[i*3]=hole.pos.x; arr[i*3+1]=hole.pos.y; arr[i*3+2]=hole.pos.z; }
       }
       asteroidBelt.geometry.attributes.position.needsUpdate = true;
@@ -5412,4 +5437,12 @@ window.__cosmosStudio = { open:openStudio, close, heliocentric, auToScene, PLANE
   timeDock:(c)=>timeDockSet(c), timeDockToggle:()=>timeDockToggle(), get timeCollapsed(){ return !!root && root.classList.contains('time-collapsed'); },
   pinchZoom:(ratio)=>{ const curR=camera.position.distanceTo(orbit.target); const base=zoom3D.active?zoom3D.targetR:curR;
     zoom3D.targetR=Math.max(orbit.minDistance,Math.min(orbit.maxDistance, base*Math.max(0.5,Math.min(2,ratio||1)))); zoom3D.active=true; },
-  get dnFlightActive(){ return !!dnFlightSim; }, get dnWorldSlow(){ return dnWorldSlow; }, get airportCount(){ return Object.keys(AIRPORTS).length; } };
+  get dnFlightActive(){ return !!dnFlightSim; }, get dnWorldSlow(){ return dnWorldSlow; }, get airportCount(){ return Object.keys(AIRPORTS).length; },
+  // Black-hole (accretion / infall) hooks — RAF-independent validation of total consumption
+  bhOpenForm:()=>bhOpenForm(), bhLockIn:()=>bhLockIn(),
+  get bhCount(){ return blackHoles.length; }, get bhSimOn(){ return bhSimOn; },
+  get bhBodiesAlive(){ return bhBodies.filter(b=>b.alive).length; }, get bhBodiesTotal(){ return bhBodies.length; },
+  get bhBeltAliveCount(){ return bhBeltAlive ? bhBeltAlive.reduce((a,v)=>a+(v?1:0),0) : 0; },
+  get bhBeltTotal(){ return bhBeltAlive ? bhBeltAlive.length : 0; },
+  get bhSunDrain(){ return +bhSunDrain.toFixed(4); },
+  bhTick:(dt)=>{ try{ bhIntegrate(dt||0.016); bhRenderTick(dt||0.016); bhStellarTick(dt||0.016); }catch(_){} } };
