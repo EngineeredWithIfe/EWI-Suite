@@ -347,7 +347,29 @@ function injectCSS(){
   .st-menu button{background:transparent;border:0;color:#e8ecf6;text-align:left;padding:8px 11px;border-radius:7px;font-size:12.5px;cursor:pointer}
   .st-menu button:hover,.st-menu button:focus{background:rgba(124,92,255,.28);outline:none}
   .st-time{position:absolute;left:50%;transform:translateX(-50%);bottom:12px;z-index:4;display:flex;align-items:center;gap:10px;
-    background:rgba(12,14,24,.82);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:8px 12px}
+    background:rgba(12,14,24,.82);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:8px 12px;
+    transition:opacity .3s ease,transform .32s cubic-bezier(.22,.61,.36,1)}
+  .st-time .st-time-x{appearance:none;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.05);color:#c6cde0;
+    width:28px;height:28px;border-radius:8px;font-size:16px;line-height:1;cursor:pointer;flex:none;
+    display:inline-flex;align-items:center;justify-content:center;transition:background .15s,border-color .15s,color .15s}
+  .st-time .st-time-x:hover{background:rgba(124,92,255,.2);border-color:rgba(124,92,255,.5);color:#fff}
+  .st-time .st-time-x:focus-visible{outline:2px solid #7c5cff;outline-offset:2px}
+  /* Dynamic Island — collapsed time pill; morphs to/from the full card via crossfade + scale. */
+  .st-pill{position:absolute;left:50%;bottom:12px;transform:translateX(-50%) scale(.92);z-index:4;
+    display:inline-flex;align-items:center;gap:9px;height:40px;padding:0 17px;border-radius:999px;
+    border:1px solid rgba(255,255,255,.14);background:rgba(12,14,24,.82);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);
+    color:#eef1f8;font-size:13px;font-weight:700;font-variant-numeric:tabular-nums;cursor:pointer;
+    opacity:0;pointer-events:none;box-shadow:0 8px 26px rgba(0,0,0,.45);
+    transition:opacity .3s ease,transform .32s cubic-bezier(.22,.61,.36,1),background .15s,border-color .15s}
+  .st-pill:hover{background:rgba(124,92,255,.22);border-color:rgba(124,92,255,.5)}
+  .st-pill:focus-visible{outline:2px solid #7c5cff;outline-offset:2px}
+  .st-pill .pill-dot{width:8px;height:8px;border-radius:50%;background:#8a7cff;box-shadow:0 0 8px rgba(124,92,255,.9);flex:none}
+  .st-pill.live .pill-dot{background:#37d67a;box-shadow:0 0 8px rgba(55,214,122,.95);animation:pillPulse 1.6s ease-in-out infinite}
+  @keyframes pillPulse{0%,100%{opacity:.55}50%{opacity:1}}
+  @media (prefers-reduced-motion:reduce){.st-pill.live .pill-dot{animation:none}}
+  /* Collapsed state: the card fades/scales out, the pill fades/scales in (same centre → Dynamic-Island morph). */
+  #studioRoot.time-collapsed .st-time{opacity:0;transform:translateX(-50%) scale(.92);pointer-events:none}
+  #studioRoot.time-collapsed .st-pill{opacity:1;transform:translateX(-50%) scale(1);pointer-events:auto}
   .st-time input[type=date]{background:rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.12);color:#e8ecf6;border-radius:8px;padding:5px 7px;font-size:12.5px}
   .st-time input[type=range]{width:120px;accent-color:#7c5cff}
   .st-hint{position:absolute;right:276px;bottom:14px;z-index:4;font-size:11px;color:#8b93ad;max-width:230px;text-align:right;pointer-events:none}
@@ -490,7 +512,7 @@ function injectCSS(){
   #stTabLeft{left:0;border-left:0;border-radius:0 13px 13px 0}
   #stTabRight{right:0;border-right:0;border-radius:13px 0 0 13px}
   /* Immersive view — one control clears every overlay for a pure, clean sky. */
-  #studioRoot.immersive .st-panel,#studioRoot.immersive .st-time,#studioRoot.immersive .st-hint,
+  #studioRoot.immersive .st-panel,#studioRoot.immersive .st-time,#studioRoot.immersive .st-pill,#studioRoot.immersive .st-hint,
   #studioRoot.immersive .st-badge,#studioRoot.immersive .st-cine,#studioRoot.immersive .st-cine-pl,
   #studioRoot.immersive .st-nova,#studioRoot.immersive .dn-hud,#studioRoot.immersive .st-tab,
   #studioRoot.immersive .dn-panel{opacity:0;pointer-events:none;transition:opacity .28s ease}
@@ -509,6 +531,7 @@ function injectCSS(){
     padding-right:max(12px,env(safe-area-inset-right));padding-top:env(safe-area-inset-top,0px);
     min-height:52px;height:auto}
   .st-time{bottom:max(12px,env(safe-area-inset-bottom,0px))}
+  .st-pill{bottom:max(12px,env(safe-area-inset-bottom,0px))}
   /* Touch devices: enlarge every hit target to a comfortable ≥40px (WCAG 2.2). */
   @media (pointer:coarse){
     .st-btn{height:40px}
@@ -720,7 +743,8 @@ function buildDOM(){
       <div class="nv-note" id="stEcNote"></div>
     </div>
 
-    <div class="st-time">
+    <div class="st-time" id="stTime">
+      <button class="st-time-x" id="stTimeCollapse" type="button" title="Collapse into the time pill" aria-label="Collapse the time controls into a pill" aria-expanded="true">⌄</button>
       <input type="date" id="stDate" value="2026-08-17" aria-label="Simulation date" />
       <button class="st-btn" id="stPlay" title="Play / pause">⏸</button>
       <input type="range" id="stSpeed" min="0" max="8" step="1" value="3" aria-label="Time speed" />
@@ -735,6 +759,11 @@ function buildDOM(){
       </select>
       <span id="stLocal" style="font-size:11px;color:#9aa3bd;font-variant-numeric:tabular-nums" aria-live="off"></span>
     </div>
+    <!-- Dynamic Island — the collapsed form of the time card: a single glanceable pill (live date + time) that expands back into the full controls on tap. Self-contained (never needs the immersive “Show controls” overlay to return). -->
+    <button class="st-pill" id="stTimePill" type="button" title="Show date, time & the time controls" aria-label="Show date, time and the time controls" aria-expanded="false">
+      <span class="pill-dot" aria-hidden="true"></span>
+      <span class="pill-txt" id="stPillTxt">—</span>
+    </button>
 
     <div class="st-hint">
       Explore: drag orbit · scroll / pinch zoom · right-drag or two-finger pan · <b>1/2/3</b> front·top·side view · <b>G</b> slide · <b>H</b> immersive · <b>W/E/R</b> move·rotate·scale · <b>F</b> focus · <b>Del</b> remove · gamepad supported
@@ -826,6 +855,8 @@ function buildDOM(){
   root.querySelector('#stTabRight').addEventListener('click', ()=>panelShow('right', true));
   root.querySelector('#stImmersive').addEventListener('click', ()=>toggleImmersive());
   root.querySelector('#stRestore').addEventListener('click', ()=>toggleImmersive(false));
+  root.querySelector('#stTimeCollapse').addEventListener('click', ()=>timeDockSet(true));
+  root.querySelector('#stTimePill').addEventListener('click', ()=>timeDockSet(false));
   playBtn.addEventListener('click', ()=>{ setRealtime(false); playing=!playing; playBtn.textContent = playing?'⏸':'▶'; });
   dateInput.addEventListener('change', ()=>{ setRealtime(false); simDate = new Date(dateInput.value+'T00:00:00Z'); updatePlanets(); });
   const SPD=[0,1,2,5,15,45,120,365,1460];
@@ -878,6 +909,28 @@ function toggleImmersive(force){
   if (b){ b.classList.toggle('on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); }
   if (on) toast('Immersive view · tap “Show controls” to restore');
   else    toast('Controls restored');
+}
+
+/* ---- Time dock — Apple “Dynamic Island” collapse -----------------------------
+   The bottom time card collapses into a single glanceable pill (live date +
+   time) and expands back on tap — a self-contained control that never depends on
+   the Immersive “Show controls” overlay to return. The choice persists per device
+   (phones start collapsed for a calm, uncluttered sky). */
+const TIME_DOCK_KEY = 'ewi-cosmos-time-collapsed';
+function timeDockSet(collapsed, persist){
+  if (!root) return;
+  root.classList.toggle('time-collapsed', collapsed);
+  const pill = root.querySelector('#stTimePill'); if (pill) pill.setAttribute('aria-expanded', String(!collapsed));
+  const cb = root.querySelector('#stTimeCollapse'); if (cb) cb.setAttribute('aria-expanded', String(!collapsed));
+  if (persist !== false){ try{ localStorage.setItem(TIME_DOCK_KEY, collapsed ? '1' : '0'); }catch(_){} }
+  updateLocalClock();                            // populate the pill / card immediately
+}
+function timeDockToggle(){ if (root) timeDockSet(!root.classList.contains('time-collapsed')); }
+function applyTimeDockPref(){
+  const smallDefault = window.matchMedia('(max-width:560px)').matches;   // phones start as the compact pill
+  let saved = null; try{ saved = localStorage.getItem(TIME_DOCK_KEY); }catch(_){}
+  const collapsed = saved === null ? smallDefault : saved === '1';
+  timeDockSet(collapsed, false);
 }
 
 /* ---------------------------------------------------------------------------
@@ -2335,6 +2388,7 @@ function setRealtime(on){
   btn.classList.toggle('on', on);
   btn.setAttribute('aria-pressed', on ? 'true':'false');
   ratio.disabled = !on;
+  const pill = root.querySelector('#stTimePill'); if (pill) pill.classList.toggle('live', on);   // pill dot pulses green while tracking real time
   if (on){
     simDate = new Date();
     playing = true; playBtn.textContent = '⏸';
@@ -2346,9 +2400,13 @@ function setRealtime(on){
   }
 }
 function updateLocalClock(){
-  const el = root && root.querySelector('#stLocal'); if (!el) return;
+  if (!root) return;
   const now = new Date();
-  el.textContent = now.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+  const dateStr = now.toLocaleDateString([], { weekday:'short', month:'short', day:'numeric' });
+  const timeStr = now.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+  const both = dateStr + ' · ' + timeStr;
+  const el = root.querySelector('#stLocal'); if (el) el.textContent = both;      // Current Time now includes the current date
+  const pill = root.querySelector('#stPillTxt'); if (pill) pill.textContent = both;
 }
 
 /* ---------------------------------------------------------------------------
@@ -3518,6 +3576,7 @@ function openStudio(){
   syncViewSwitch(true);
   onResize();
   applyPanelPrefs();                            // device-aware: phones/tablets start uncluttered
+  applyTimeDockPref();                          // device-aware: phones start with the collapsed time pill
   clock.start();
   // resume audio contexts after the user gesture that opened the studio
   if (listener.context.state==='suspended') listener.context.resume().catch(()=>{});
@@ -4313,6 +4372,7 @@ window.__cosmosStudio = { open:openStudio, close, heliocentric, auToScene, PLANE
   get panelLeftHidden(){ return !!root && root.querySelector('.st-left').classList.contains('st-hidden'); },
   get panelRightHidden(){ return !!root && root.querySelector('.st-right').classList.contains('st-hidden'); },
   immersive:(f)=>toggleImmersive(f), get immersiveOn(){ return !!root && root.classList.contains('immersive'); },
+  timeDock:(c)=>timeDockSet(c), timeDockToggle:()=>timeDockToggle(), get timeCollapsed(){ return !!root && root.classList.contains('time-collapsed'); },
   pinchZoom:(ratio)=>{ const curR=camera.position.distanceTo(orbit.target); const base=zoom3D.active?zoom3D.targetR:curR;
     zoom3D.targetR=Math.max(orbit.minDistance,Math.min(orbit.maxDistance, base*Math.max(0.5,Math.min(2,ratio||1)))); zoom3D.active=true; },
   get dnFlightActive(){ return !!dnFlightSim; }, get dnWorldSlow(){ return dnWorldSlow; }, get airportCount(){ return Object.keys(AIRPORTS).length; } };
