@@ -4659,6 +4659,10 @@ function dnActiveBody(){
 }
 function dnUpdateHUD(){
   if (!dnHudEl) return;
+  // Keep the corner details card clear of a Warp-tempo card docked into the Scene (left) panel —
+  // lift it to rest just above the docked card so the two never overlap (tracks its live height).
+  dnHudEl.style.bottom = (dnTempoDock==='left' && dnTempoEl && dnTempoEl.offsetParent)
+    ? (64 + dnTempoEl.offsetHeight + 10) + 'px' : '';
   const nb=dnNearestBody(); if(!nb){ dnHudEl.textContent=''; return; }
   const rkm=BODY_R_KM[nb.key]||1, kmPerScene=rkm/nb.sceneR;
   const dScene=camera.position.distanceTo(nb.center);
@@ -5095,13 +5099,13 @@ function dnBuildTempo(){
       if(key!=='time') host.classList.add('dn-has-tempo');
       host.appendChild(dnTempoEl); };
     if(animate===false) apply(); else _dnFlip(dnTempoEl, apply);
-    dnTempoDock=key; _dnPersist();
+    dnTempoDock=key; _dnPersist(); dnUpdateHUD();   // lift the corner details card clear at once
   }
   function _dnUndock(){ if(!dnTempoDock) return; const r=dnTempoEl.getBoundingClientRect();
     _dnClearHostFlags(); root.appendChild(dnTempoEl);
     dnTempoEl.classList.remove('dn-docked','dn-docked-time');
     dnTempoEl.style.transform='none'; dnTempoEl.style.bottom='auto';
-    dnTempoEl.style.left=r.left+'px'; dnTempoEl.style.top=r.top+'px'; dnTempoDock=null; }
+    dnTempoEl.style.left=r.left+'px'; dnTempoEl.style.top=r.top+'px'; dnTempoDock=null; dnUpdateHUD(); }
   // restore saved dock / position
   try{ const st=JSON.parse(localStorage.getItem(TKEY)||'{}');
     if(st.dock && DOCK_HOST[st.dock]){ _dnDoDock(st.dock, false); }
