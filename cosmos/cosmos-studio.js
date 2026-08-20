@@ -255,8 +255,11 @@ let cineDwellSec = 8;                           // seconds the auto-director hol
 let cinePlaylist = null;                        // ordered [{id,on}] — lazily built from the live scene, then persisted
 let cinePlIndex = 0;                            // current position within the enabled playlist
 let cinePlDragFrom = null;                       // drag-reorder source index within the playlist card
+let cineSunSafe = false;                         // camera framing: true = "outside-Sun only" (orbit never swings the lens through the Sun); false = the current free orbit that may cross in front of the Sun
+let cineListKey = undefined;                     // last id highlighted in the Scene list for the auto-director (dedupe DOM writes)
 const CINE_DWELL_KEY = 'ewi-cosmos-cine-dwell';
 const CINE_PL_KEY    = 'ewi-cosmos-cine-playlist';
+const CINE_SUNSAFE_KEY = 'ewi-cosmos-cine-sunsafe';
 let gamepadIndex = null;
 let idSeq = 1;
 
@@ -320,9 +323,15 @@ function injectCSS(){
   .st-panel h4 .st-x:hover{background:rgba(255,90,90,.28);color:#fff}
   .st-panel h4 .st-x:focus-visible{outline:2px solid #7c5cff;outline-offset:2px}
   .st-scroll{overflow:auto;padding:8px}
-  .st-item{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:9px;cursor:pointer;font-size:12.5px}
+  .st-item{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:9px;cursor:pointer;font-size:12.5px;position:relative;transition:background .15s}
   .st-item:hover{background:rgba(255,255,255,.05)}
   .st-item.sel{background:rgba(124,92,255,.2)}
+  /* Cinematic "now showing" — the object the auto-director is currently framing, kept in perfect sync with the show */
+  .st-item.cine-now{background:linear-gradient(90deg,rgba(124,92,255,.34),rgba(124,92,255,.12));box-shadow:inset 0 0 0 1px rgba(124,92,255,.55)}
+  .st-item.cine-now::before{content:"";position:absolute;left:0;top:6px;bottom:6px;width:3px;border-radius:3px;background:#b9a6ff;box-shadow:0 0 8px rgba(124,92,255,.9);animation:cineNowPulse 1.6s ease-in-out infinite}
+  .st-item.cine-now>span:nth-of-type(2){color:#fff;font-weight:700}
+  @keyframes cineNowPulse{0%,100%{opacity:.55}50%{opacity:1}}
+  @media (prefers-reduced-motion:reduce){.st-item.cine-now::before{animation:none;opacity:.9}}
   .st-dot{width:11px;height:11px;border-radius:50%;flex:none}
   .st-item .x{margin-left:auto;opacity:.5;font-size:13px}
   .st-item .x:hover{opacity:1}
@@ -651,6 +660,8 @@ function buildDOM(){
       <button id="stCineNext" title="Nearest neighbouring body — next">→</button>
       <button id="stCineFocus" title="Focus the selected body (or nearest body)">◎ Focus</button>
       <span class="cine-sep" aria-hidden="true"></span>
+      <button id="stCineView" class="cine-view" aria-pressed="false" title="Camera framing. Off = the current free orbit that can swing the lens through the Sun to keep the scene’s object in view. On = “outside-Sun only”, so every shot stays on the outer side and the camera never passes through the Sun.">🎥 Through-Sun</button>
+      <span class="cine-sep" aria-hidden="true"></span>
       <label class="cine-dwell" for="stCineDwellN" title="How long the auto-director holds each scene before switching to the next in the playlist">
         <span>Hold each</span>
         <input type="number" id="stCineDwellN" min="1" max="999" step="1" value="8" inputmode="numeric" aria-label="Auto-switch hold time — amount" />
@@ -767,6 +778,7 @@ function buildDOM(){
   root.querySelector('#stCinePrev').addEventListener('click', ()=>cineStep(-1));
   root.querySelector('#stCineNext').addEventListener('click', ()=>cineStep(1));
   root.querySelector('#stCineFocus').addEventListener('click', cineFocusSelected);
+  root.querySelector('#stCineView').addEventListener('click', cineToggleView);
   // Auto-director dwell time + reorderable playlist card
   root.querySelector('#stCineDwellN').addEventListener('input', cineApplyDwellFromUI);
   root.querySelector('#stCineDwellN').addEventListener('change', ()=>{ cineApplyDwellFromUI(); cineSyncDwellUI(); });
@@ -774,7 +786,7 @@ function buildDOM(){
   root.querySelector('#stCinePlaylist').addEventListener('click', ()=>cinePlToggleCard());
   root.querySelector('#stCinePlClose').addEventListener('click', ()=>cinePlToggleCard(false));
   root.querySelector('#stCinePlReset').addEventListener('click', cinePlReset);
-  cineLoadPrefs(); cineSyncDwellUI();
+  cineLoadPrefs(); cineSyncDwellUI(); cineSyncViewUI();
   // Sun's End — independent stellar-death time-lapse (toggle on/off at any time)
   root.querySelector('#stNova').addEventListener('click', ()=>novaToggle());
   root.querySelector('#stNovaPlay').addEventListener('click', novaTogglePlay);
@@ -1192,10 +1204,38 @@ function cineLoadPrefs(){
     const raw = localStorage.getItem(CINE_PL_KEY);
     if (raw){ const arr = JSON.parse(raw); if (Array.isArray(arr)) cinePlaylist = arr.filter(x=>x&&typeof x.id==='string').map(x=>({ id:x.id, on:x.on!==false })); }
   }catch(_){}
+  try{ cineSunSafe = localStorage.getItem(CINE_SUNSAFE_KEY) === '1'; }catch(_){}
 }
 function cineSavePrefs(){
   try{ localStorage.setItem(CINE_DWELL_KEY, String(cineDwellSec)); }catch(_){}
   try{ localStorage.setItem(CINE_PL_KEY, JSON.stringify(cinePlaylist||[])); }catch(_){}
+  try{ localStorage.setItem(CINE_SUNSAFE_KEY, cineSunSafe ? '1' : '0'); }catch(_){}
+}
+// View selector — flip between the current free orbit (may cross the Sun) and
+// "outside-Sun only" framing, then persist + reflect the choice in the toolbar.
+function cineToggleView(force){
+  cineSunSafe = (force===undefined) ? !cineSunSafe : !!force;
+  cineSavePrefs(); cineSyncViewUI();
+}
+function cineSyncViewUI(){
+  if (!root) return;
+  const b = root.querySelector('#stCineView'); if (!b) return;
+  b.classList.toggle('on', cineSunSafe);
+  b.setAttribute('aria-pressed', String(cineSunSafe));
+  b.textContent = cineSunSafe ? '☀︎ Outside-Sun' : '🎥 Through-Sun';
+}
+// Keep the Scene-list "now showing" highlight in perfect sync with the
+// auto-director: highlight the body the cinematic camera is currently framing
+// (auto playlist scene, or the Focus target), and clear it otherwise.
+function cineSyncList(){
+  if (!objListEl) return;
+  const id = (camMode==='cinematic' && !cineParked)
+    ? (cineFocusOn ? cineFocusId : cineFocusKey)
+    : null;
+  if (id === cineListKey) return;
+  cineListKey = id;
+  objListEl.querySelectorAll('.st-item').forEach(el =>
+    el.classList.toggle('cine-now', id != null && el.dataset.id === String(id)));
 }
 // Build the playlist once from the default order (only scenes that actually
 // exist), then keep it reconciled with the live scene: append any imported
@@ -1255,12 +1295,41 @@ function tickCinematic(dt){
   }
   const tgt = _cineA;
   const radius = 6 + cRad*3;
-  const ang = cineT*0.18;
-  const desired = new THREE.Vector3(
-    tgt.x + Math.cos(ang)*radius,
-    tgt.y + Math.max(2.4, radius*0.28) + Math.sin(cineT*0.5)*1.2,
-    tgt.z + Math.sin(ang)*radius
-  );
+  let desired;
+  // "Outside-Sun only" framing: keep the lens on the hemisphere facing AWAY from
+  // the Sun so the orbit never swings the camera through the Sun, while still
+  // holding the scene's object dead-centre. We build an orthonormal basis around
+  // the outward radial (Sun→target) direction and sway within ±~66° of it, so the
+  // outward component of the view direction always stays positive (never crosses
+  // to the Sun-facing side). For the Sun itself this can't apply → free orbit.
+  if (cineSunSafe && cineFocusKey !== 'sun'){
+    if (sun) sun.getWorldPosition(_cineSun); else _cineSun.set(0,0,0);
+    _cineOut.copy(tgt).sub(_cineSun);
+    if (_cineOut.lengthSq() < 1e-6){
+      const ang = cineT*0.18;
+      desired = _cineDesired.set(tgt.x + Math.cos(ang)*radius, tgt.y + Math.max(2.4, radius*0.28), tgt.z + Math.sin(ang)*radius);
+    } else {
+      _cineOut.normalize();
+      _cineRight.crossVectors(_worldUp, _cineOut);
+      if (_cineRight.lengthSq() < 1e-6) _cineRight.set(1,0,0);
+      _cineRight.normalize();
+      _cineUp2.crossVectors(_cineOut, _cineRight).normalize();
+      const sway = Math.sin(cineT*0.16) * 1.15;                 // ±~66° — stays on the Sun-far hemisphere
+      const bob  = 0.34 + Math.sin(cineT*0.5)*0.12;
+      _cineDir.copy(_cineOut).multiplyScalar(Math.cos(sway))
+        .addScaledVector(_cineRight, Math.sin(sway))
+        .addScaledVector(_cineUp2, bob)
+        .normalize();
+      desired = _cineDesired.copy(tgt).addScaledVector(_cineDir, radius);
+    }
+  } else {
+    const ang = cineT*0.18;
+    desired = _cineDesired.set(
+      tgt.x + Math.cos(ang)*radius,
+      tgt.y + Math.max(2.4, radius*0.28) + Math.sin(cineT*0.5)*1.2,
+      tgt.z + Math.sin(ang)*radius
+    );
+  }
   camera.position.lerp(desired, 1 - Math.pow(0.001, dt));
   orbit.target.lerp(tgt, 1 - Math.pow(0.004, dt));
 }
@@ -1273,6 +1342,14 @@ function tickCinematic(dt){
 const _cineA = new THREE.Vector3();
 const _cineB = new THREE.Vector3();
 const _cineSize = new THREE.Vector3();
+// Scratch vectors for the "outside-Sun only" cinematic framing basis (reused each frame).
+const _cineSun = new THREE.Vector3();
+const _cineOut = new THREE.Vector3();
+const _cineRight = new THREE.Vector3();
+const _cineUp2 = new THREE.Vector3();
+const _cineDir = new THREE.Vector3();
+const _cineDesired = new THREE.Vector3();
+const _worldUp = new THREE.Vector3(0,1,0);
 
 function cineFocusList(){
   const ids = [];
@@ -1381,6 +1458,7 @@ function cineUpdateDock(){
   const focus = dock.querySelector('#stCineFocus');
   if (focus) focus.classList.toggle('on', cineFocusOn);
   if (camMode!=='cinematic') cinePlToggleCard(false);   // the playlist card belongs to Cinematic mode
+  cineSyncList();                                       // keep the Scene-list "now showing" highlight in sync with mode/focus/park changes
 }
 
 /* ---- Cinematic playlist card — include + reorder the auto-switch scenes ----
@@ -1612,7 +1690,7 @@ function animate(){
     pollGamepad(dt);
     if (novaOn) novaTick(dt);
     else if (ecOn) ecTick(dt);
-    else if (camMode==='cinematic') tickCinematic(dt);
+    else if (camMode==='cinematic'){ tickCinematic(dt); cineSyncList(); }
     tickDolly3D(dt);
     deepNavTick(dt);
     orbit.update();
@@ -3157,6 +3235,7 @@ function refreshObjList(){
     const x = el.querySelector('.x');
     if (x) x.addEventListener('click', ()=>{ const im=imported.find(i=>i.id===el.dataset.id); if (im) removeImported(im); });
   });
+  cineListKey = undefined; cineSyncList();   // the list was re-rendered \u2014 re-apply the cinematic "now showing" highlight
 }
 function listRow(id,name,color,rm,im){
   const hex = '#'+color.toString(16).padStart(6,'0');
@@ -4227,6 +4306,8 @@ window.__cosmosStudio = { open:openStudio, close, heliocentric, auToScene, PLANE
   get cinePlaylist(){ return (cineEnsurePlaylist()||[]).map(it=>({id:it.id,on:it.on})); },
   cineEnabledSeq:()=>cineEnabledSeq(), cinePlMove:(i,d)=>cinePlMove(i,d), cineAuto:()=>cineAuto(),
   cineTick:(dt)=>{ try{ tickCinematic(dt||0.016); }catch(_){} }, get cineFocusKey(){ return cineFocusKey; },
+  get cineSunSafe(){ return cineSunSafe; }, setCineView:(f)=>cineToggleView(f),
+  get cineListKey(){ return cineListKey; }, cineSyncList:()=>cineSyncList(),
   // Layout / immersive / mobile-zoom hooks
   panelShow:(side,show)=>panelShow(side,show), panelToggle:(side)=>panelToggle(side),
   get panelLeftHidden(){ return !!root && root.querySelector('.st-left').classList.contains('st-hidden'); },
