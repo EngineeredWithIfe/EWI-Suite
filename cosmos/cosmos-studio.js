@@ -388,6 +388,17 @@ function injectCSS(){
   .st-dot{width:11px;height:11px;border-radius:50%;flex:none}
   .st-item .x{margin-left:auto;opacity:.5;font-size:13px}
   .st-item .x:hover{opacity:1}
+  /* Black Holes group in the Scene list — a parent header with ＋/− and a live count, then one indented, independently-deletable sub-row per hole */
+  .st-bhgroup{margin-top:2px}
+  .st-item.st-bhhead>span:nth-of-type(2){font-weight:700}
+  .st-bhhead .bhg-count{margin-left:6px;min-width:1.5em;height:17px;padding:0 5px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;font-variant-numeric:tabular-nums;color:#efe9ff;background:rgba(150,130,255,.2);border:1px solid rgba(150,130,255,.4);border-radius:9px}
+  .st-bhhead .bhg-ctl{margin-left:auto;display:flex;gap:5px;align-items:center}
+  .st-bhhead .bhg-btn{appearance:none;width:22px;height:22px;line-height:1;display:inline-flex;align-items:center;justify-content:center;border:1px solid rgba(150,130,255,.45);background:rgba(150,130,255,.14);color:#efe9ff;border-radius:7px;font-size:15px;font-weight:700;cursor:pointer;transition:background .15s,border-color .15s}
+  .st-bhhead .bhg-btn:hover:not(:disabled){background:rgba(150,130,255,.3);border-color:rgba(150,130,255,.7)}
+  .st-bhhead .bhg-btn:disabled{opacity:.4;cursor:default}
+  .st-item.st-bhsub{margin-left:18px;font-size:12px}
+  .st-item.bh-star{background:linear-gradient(90deg,rgba(184,166,255,.32),rgba(124,92,255,.12));box-shadow:inset 0 0 0 1px rgba(184,166,255,.5)}
+  .st-item.bh-star>span:nth-of-type(2){color:#fff;font-weight:700}
   .st-field{padding:8px 12px;border-bottom:1px solid rgba(255,255,255,.06)}
   .st-field label{display:block;font-size:10.5px;color:#9aa3bd;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
   .st-row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
@@ -915,7 +926,7 @@ function buildDOM(){
         <span class="nv-spacer"></span>
         <div class="nv-actions">
           <button id="stBhPlay" title="Pause / resume the cinematic">⏸</button>
-          <button id="stBhReplay" title="Replay from the beginning">↺</button>
+          <button id="stBhReplay" title="Restart — replay the whole event from the moment the black hole was placed">↺</button>
           <button id="stBhFocus" title="Focus lock — hold on your selected object and stop the auto camera" aria-pressed="false">◎ Focus</button>
           <button id="stBhAdd" title="Add another independent black hole">＋ Hole</button>
           <button id="stBhExport" title="Export this black-hole cinematic as an MP4 video">⤓ MP4</button>
@@ -3546,6 +3557,7 @@ function bhSimStart(){
     planetVis: PLANETS.map(p=>({ key:p.key, vis: planetMeshes[p.key]?planetMeshes[p.key].group.visible:true, sc: planetMeshes[p.key]?planetMeshes[p.key].group.scale.x:1 })),
     importedPos: imported.map(im=>({ id:im.id, p:im.object3d.position.clone(), vis:im.object3d.visible, sc:im.object3d.scale.x })),
     beltVisible: asteroidBelt?asteroidBelt.visible:true,
+    holes: blackHoles.map(bh=>({ id:bh.id, massMsun:bh.massMsun, rs:bh.rs, rs0:bh.rs0 })),
     sun: sun ? { scale:sun.scale.x, vis:sun.visible, col:sun.material.color.getHex(),
       lightI:sunLight?sunLight.intensity:3.2, lightC:sunLight?sunLight.color.getHex():0xfff4d8,
       glowO:sunGlow?sunGlow.material.opacity:0.14, glowC:sunGlow?sunGlow.material.color.getHex():0xffb020 } : null
@@ -3712,19 +3724,52 @@ function bhBurstTick(dt){
     if (b.life>=b.dur){ b.cleanup(); bhBurstList.splice(i,1); }
   }
 }
+// Put every perturbed body — planets, Sun, imported objects, the asteroid belt —
+// back exactly where it was the instant the black hole was placed (the snapshot
+// bhSimStart took). Reused by the Restart control (which keeps the sim running) and
+// by bhSimStop (which tears it down). Never clears the snapshot itself.
+function bhRestoreInitialState(){
+  if (!_bhSaved) return;
+  for (const pv of _bhSaved.planetVis){ const rec=planetMeshes[pv.key]; if(rec){ rec.group.visible=pv.vis; rec.group.scale.setScalar(pv.sc==null?1:pv.sc); if(rec.orbitLine) rec.orbitLine.visible=pv.vis; } }
+  for (const ip of _bhSaved.importedPos){ const im=imported.find(x=>x.id===ip.id); if(im){ im.object3d.position.copy(ip.p); im.object3d.visible=ip.vis; im.object3d.scale.setScalar(ip.sc==null?1:ip.sc); } }
+  if (asteroidBelt && bhBeltBase){ const arr=asteroidBelt.geometry.attributes.position.array; arr.set(bhBeltBase); asteroidBelt.geometry.attributes.position.needsUpdate=true; asteroidBelt.visible=_bhSaved.beltVisible; }
+  const sb=_bhSaved.sun;
+  if (sb && sun){ sun.visible=(sb.vis!==false); sun.scale.setScalar(sb.scale==null?1:sb.scale); sun.material.color.setHex(sb.col);
+    if (sunLight){ sunLight.intensity=sb.lightI; sunLight.color.setHex(sb.lightC); }
+    if (sunGlow){ sunGlow.material.opacity=sb.glowO; sunGlow.material.color.setHex(sb.glowC); } }
+  simDate = new Date(_bhSaved.simDate.getTime()); try{ updatePlanets(); }catch(_){}
+}
+// Reset each hole to the mass and size it had at placement (accretion grows them as
+// bodies fall in) so a replay reproduces the event identically.
+function bhResetHoles(){
+  if (!_bhSaved || !_bhSaved.holes) return;
+  for (const hs of _bhSaved.holes){ const bh=blackHoles.find(x=>x.id===hs.id); if(!bh) continue; bh.massMsun=hs.massMsun; bh.rs=hs.rs; bh.rs0=hs.rs0; bhUpdateMesh(bh); }
+}
+// Restart the whole event — restore the system to the moment of placement and play
+// the entire infall again from the top. The chosen main character (bhCineStar) and
+// every black hole are preserved. `silent` suppresses the confirmation toast (used
+// when a recording restarts the event so it captures the show from the first frame).
+function bhReplayEvent(silent){
+  if (!bhCineOn) return;
+  if (bhSimOn && _bhSaved){
+    bhRestoreInitialState();                     // planets / Sun / imported / belt back to placement
+    bhResetHoles();                              // holes back to their placement mass + size
+    bhBodies = [];                               // rebuild the movable set from the restored, fully-visible system
+    for (const p of PLANETS){ const rec = planetMeshes[p.key]; if (!rec || !rec.group.visible) continue; bhBodies.push(bhSnapshotBody('planet', rec, rec.group.position, p.mass||1e-9)); }
+    for (const im of imported){ if (!im.object3d.visible) continue; bhBodies.push(bhSnapshotBody('imported', im, im.object3d.position, 3e-6)); }
+    if (bhBeltVel) bhBeltVel.fill(0);
+    if (bhBeltAlive) bhBeltAlive.fill(1);
+    bhSeedVelocities();
+    bhSunDrain=0; bhSunFed=false; _bhSunShred=0;
+    for (let i=bhBurstList.length-1;i>=0;i--){ bhBurstList[i].cleanup(); bhBurstList.splice(i,1); }
+  }
+  bhCineT=0; bhCinePlaying=true; cineLastInput=0; bhCineUpdateUI();
+  if (!silent) toast('Restarted — every body is back where it began · watch the whole event again');
+}
 function bhSimStop(restore){
   if (!bhSimOn) return;
   bhSimOn = false;
-  if (restore && _bhSaved){
-    for (const pv of _bhSaved.planetVis){ const rec=planetMeshes[pv.key]; if(rec){ rec.group.visible=pv.vis; rec.group.scale.setScalar(pv.sc==null?1:pv.sc); if(rec.orbitLine) rec.orbitLine.visible=pv.vis; } }
-    for (const ip of _bhSaved.importedPos){ const im=imported.find(x=>x.id===ip.id); if(im){ im.object3d.position.copy(ip.p); im.object3d.visible=ip.vis; im.object3d.scale.setScalar(ip.sc==null?1:ip.sc); } }
-    if (asteroidBelt && bhBeltBase){ const arr=asteroidBelt.geometry.attributes.position.array; arr.set(bhBeltBase); asteroidBelt.geometry.attributes.position.needsUpdate=true; asteroidBelt.visible=_bhSaved.beltVisible; }
-    const sb=_bhSaved.sun;
-    if (sb && sun){ sun.visible=(sb.vis!==false); sun.scale.setScalar(sb.scale==null?1:sb.scale); sun.material.color.setHex(sb.col);
-      if (sunLight){ sunLight.intensity=sb.lightI; sunLight.color.setHex(sb.lightC); }
-      if (sunGlow){ sunGlow.material.opacity=sb.glowO; sunGlow.material.color.setHex(sb.glowC); } }
-    simDate = _bhSaved.simDate; try{ updatePlanets(); }catch(_){}
-  }
+  if (restore) bhRestoreInitialState();
   bhBodies = []; bhBeltVel=null; bhBeltAlive=null; bhBeltBase=null; _bhSaved=null;
   bhSunDrain=0; bhSunFed=false; _bhSunShred=0;
   for (let i=bhBurstList.length-1;i>=0;i--){ bhBurstList[i].cleanup(); bhBurstList.splice(i,1); }
@@ -3837,6 +3882,7 @@ function bhCineSetStar(id){
   cineLastInput = 0;
   const b = root && root.querySelector('#stBhFocus');
   if (b){ b.classList.remove('on'); b.setAttribute('aria-pressed','false'); }
+  bhSyncStarHighlight();
   bhCineUpdateUI();
   toast(id ? ('Now starring ' + cineName(id) + ' — timed shots of it, its neighbours and ' + (bhCineTarget?bhCineTarget.name:'the black hole'))
            : 'Back to the black hole as the main subject');
@@ -3878,6 +3924,7 @@ function bhEnterCinema(bh){
   const d = bh.rs*16 + 22;
   camera.position.set(bh.pos.x, bh.pos.y + d*0.5, bh.pos.z + d);
   orbit.target.copy(bh.pos);
+  bhSyncStarHighlight();
   bhCineUpdateUI();
   toast('Black-hole cinematic · '+bh.name+' — the simulation begins · drag to change your view · ✕ to exit');
 }
@@ -3886,11 +3933,12 @@ function bhCineExit(){
   if (bhRec) bhRecStop(true);           // a recording in progress is saved, not discarded
   bhCineOn = false; bhCinePlaying = false; bhCineFocusOn = false; bhCineStar = null;
   if (bhBar) bhBar.classList.remove('on');
+  bhSyncStarHighlight();
   bhCountRefresh();
   toast('Exited the cinematic — the black hole and its physics keep running in the 3D view');
 }
 function bhCineTogglePlay(){ if(!bhCineOn) return; if(!bhCinePlaying && bhCineT>=BH_CINE_DUR) bhCineT=0; bhCinePlaying=!bhCinePlaying; cineLastInput=0; bhCineUpdateUI(); }
-function bhCineReplay(){ if(!bhCineOn) return; bhCineT=0; bhCinePlaying=true; cineLastInput=0; bhCineUpdateUI(); }
+function bhCineReplay(){ bhReplayEvent(false); }
 function bhCineSeek(frac){ if(!bhCineOn) return; bhCinePlaying=false; bhCineT=_nvClamp(frac,0,1)*BH_CINE_DUR; bhCineUpdateUI(); }
 function bhCineToggleFocus(){
   if (!bhCineOn) return;
@@ -3985,8 +4033,10 @@ function bhRecStart(mode){
   rec.onerror = ()=>{ bhRecComp=null; bhRec=null; _bhRecRestoreUI(); toast('Recording error \u2014 export stopped'); };
 
   bhRec = { rec, mode, save:false, finishing:false };
-  // Begin from the user's current POV and play the whole cinematic once.
-  bhCineT=0; bhCinePlaying=true; cineLastInput = performance.now(); bhCineUpdateUI();
+  // Restart the whole event so the recording captures it from the very first frame,
+  // then hold the user's current POV briefly and play it once through.
+  bhReplayEvent(true);
+  bhCinePlaying=true; cineLastInput = performance.now(); bhCineUpdateUI();
   _bhRecSetUI(true);
   try{ rec.start(100); }catch(_){ try{ rec.start(); }catch(e3){ bhRecComp=null; bhRec=null; _bhRecRestoreUI(); toast('Could not start the video recorder'); return; } }
   toast(mode==='cards'
@@ -4594,12 +4644,22 @@ function refreshObjList(){
   rows.push(listRow('sun', 'Sun', 0xffcf6b, false));
   for (const p of PLANETS) rows.push(listRow(p.key, p.name, p.color, false));
   if (moon) rows.push(listRow('moon', 'Moon', 0xb388ff, false));   // Moon gets its own lavender Scene-list entry (matches its purple thumbtack)
-  for (const bh of blackHoles) rows.push(listRow(bh.id, bh.name, 0x140a22, true, null, true));   // black holes — first-class Scene objects
+  rows.push(bhListGroup());                                        // Black Holes — a parent row (＋ / − / count) with one deletable sub-row per hole
   for (const im of imported) rows.push(listRow(im.id, im.name, 0x7c5cff, true, im));
   objListEl.innerHTML = rows.join('');
+  // Parent-row ＋ / − controls — add a hole (activating Black Hole mode) or remove the most recent one.
+  objListEl.querySelectorAll('[data-bhact]').forEach(btn=>{
+    btn.addEventListener('click', ev=>{
+      ev.stopPropagation();
+      const act = btn.getAttribute('data-bhact');
+      if (act==='plus') bhCountPlus(); else if (act==='minus') bhCountMinus();
+    });
+  });
   objListEl.querySelectorAll('.st-item').forEach(el=>{
     el.addEventListener('click', ev=>{
+      if (ev.target.closest('[data-bhact]')) return;               // the +/− buttons handle themselves
       if (ev.target.classList.contains('x')) return;
+      if (el.dataset.bhhead){ bhCountPlus(); return; }             // clicking the "Black Holes" header adds a hole (activates the mode)
       const id = el.dataset.id;
       // While a black-hole cinematic is playing or recording, clicking any Scene
       // object makes it the "main character" of the shot instead of re-framing.
@@ -4621,7 +4681,39 @@ function refreshObjList(){
     });
   });
   cineListKey = undefined; cineSyncList();   // the list was re-rendered \u2014 re-apply the cinematic "now showing" highlight
+  bhSyncStarHighlight();                      // and the black-hole "main character" highlight
 }
+// The Black Holes group: a parent header carrying a live count and ＋ / − buttons,
+// followed by one indented, independently-deletable sub-row per hole. Adding a hole
+// (count > 0) activates Black Hole mode; each sub-row's ✕ removes that specific hole.
+function bhListGroup(){
+  const n = blackHoles.length;
+  const subs = blackHoles.map(bh=>{
+    const star = (bhCineOn && bhCineStar===bh.id) ? ' bh-star' : '';
+    return `<div class="st-item st-bhsub${star}" data-id="${bh.id}">`+
+      `<span class="st-dot st-bhdot" style="background:#140a22" aria-hidden="true">◕</span>`+
+      `<span>${bhEsc(bh.name)}</span>`+
+      `<span class="x" title="Delete this black hole" aria-label="Delete ${bhEsc(bh.name)}">✕</span></div>`;
+  }).join('');
+  return `<div class="st-bhgroup">`+
+    `<div class="st-item st-bhhead" data-bhhead="1" title="Add or remove black holes — adding one activates Black Hole mode">`+
+      `<span class="st-dot st-bhdot" style="background:#140a22" aria-hidden="true">◕</span>`+
+      `<span>Black Holes</span>`+
+      `<span class="bhg-count" id="stBhListN" aria-label="${n} black hole${n===1?'':'s'}">${n}</span>`+
+      `<span class="bhg-ctl">`+
+        `<button class="bhg-btn" data-bhact="minus" type="button" title="Remove the most recent black hole" aria-label="Remove a black hole"${n?'':' disabled'}>−</button>`+
+        `<button class="bhg-btn" data-bhact="plus" type="button" title="Add a black hole (activates Black Hole mode)" aria-label="Add a black hole">＋</button>`+
+      `</span>`+
+    `</div>`+ subs +
+  `</div>`;
+}
+// Keep the Scene-list "main character" highlight in sync with bhCineStar.
+function bhSyncStarHighlight(){
+  if (!objListEl) return;
+  const id = (bhCineOn && bhCineStar) ? String(bhCineStar) : null;
+  objListEl.querySelectorAll('.st-item').forEach(el=> el.classList.toggle('bh-star', id!=null && el.dataset.id===id));
+}
+function bhEsc(s){ return String(s).replace(/[&<>"]/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c])); }
 function listRow(id,name,color,rm,im,isBH){
   const hex = '#'+color.toString(16).padStart(6,'0');
   const dot = isBH
@@ -5763,6 +5855,7 @@ window.__cosmosStudio = { open:openStudio, close, heliocentric, auToScene, PLANE
   get dnFlightActive(){ return !!dnFlightSim; }, get dnWorldSlow(){ return dnWorldSlow; }, get airportCount(){ return Object.keys(AIRPORTS).length; },
   // Black-hole (accretion / infall) hooks — RAF-independent validation of total consumption
   bhOpenForm:()=>bhOpenForm(), bhLockIn:()=>bhLockIn(),
+  bhReplay:()=>bhCineReplay(), bhSetStar:(id)=>bhCineSetStar(id), get bhCineStar(){ return bhCineStar; }, get bhCineOn(){ return bhCineOn; },
   get bhCount(){ return blackHoles.length; }, get bhSimOn(){ return bhSimOn; },
   get bhBodiesAlive(){ return bhBodies.filter(b=>b.alive).length; }, get bhBodiesTotal(){ return bhBodies.length; },
   get bhBeltAliveCount(){ return bhBeltAlive ? bhBeltAlive.reduce((a,v)=>a+(v?1:0),0) : 0; },
