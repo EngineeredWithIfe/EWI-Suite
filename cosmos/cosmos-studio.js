@@ -215,6 +215,21 @@ let novaBar = null, novaFlashEl = null;        // control "screen" + climax flas
 let novaRec = null;                            // active Sun's End MediaRecorder session (or null)
 let novaRecComp = null;                        // per-frame compositor for the "scene + cards" export
 let novaFocusOn = false;                       // focus lock — hold on the selected object, stop auto camera
+// "Event Cinema" — every Jump-to-an-event scene becomes an immersive, playable
+// cinematic with the *same experience as Sun's End*: a control bar (play/pause,
+// a scrubber over the event's own time window, ← / → to step between events, a
+// Focus lock, MP4 export, exit) driven by an auto-directed camera and per-type
+// scene scripting (eclipse/shower/planetary-season/deep-time).
+let ecOn = false, ecPlaying = false, ecT = 0, ecIndex = -1;
+const EC_DUR = 30;                             // seconds of wall-clock for one full event playthrough
+let ecBar = null;                              // Event Cinema control card
+let _ecSaved = null;                           // saved scene state for a clean restore
+let ecFocusOn = false;                         // focus lock — hold on the user's selected object
+let ecFocusKey = 'earth';                      // the scene the event frames (Sun · planet · Moon · Earth)
+let ecRec = null;                              // active Event Cinema MediaRecorder session (or null)
+let ecRecComp = null;                          // per-frame compositor for the "scene + cards" export
+let ecT0 = 0;                                  // camera phase seed (keeps motion continuous across seeks)
+let _ecUiAccum = 0;
 // Remember the last render view (2D sandbox vs 3D studio) on this device, so a
 // refresh / reopened tab restores exactly where the user left off.
 const VIEW_KEY = 'ewi-cosmos-view';            // localStorage: '2d' | '3d'
@@ -233,6 +248,15 @@ let cineFocusId = null;                        // id of the focused body of mass
 const cineHist = [];                           // focus history for the ← (back) neighbour step
 let cineVisited = new Set();                    // bodies already toured (→ always hops to nearest UNVISITED)
 let cineParked = false;                        // true = user parked the camera on a body/pin → the auto-director stays yielded (no "bounce back") until they press Auto/Focus
+// Auto-director dwell + playlist. The user sets how long the camera holds each
+// scene (any number of seconds/minutes/hours) and the exact order it visits
+// (Sun · planets · Moon · imported objects). Both persist per device.
+let cineDwellSec = 8;                           // seconds the auto-director holds each scene before switching
+let cinePlaylist = null;                        // ordered [{id,on}] — lazily built from the live scene, then persisted
+let cinePlIndex = 0;                            // current position within the enabled playlist
+let cinePlDragFrom = null;                       // drag-reorder source index within the playlist card
+const CINE_DWELL_KEY = 'ewi-cosmos-cine-dwell';
+const CINE_PL_KEY    = 'ewi-cosmos-cine-playlist';
 let gamepadIndex = null;
 let idSeq = 1;
 
@@ -338,6 +362,43 @@ function injectCSS(){
   .st-cine button:hover{background:rgba(124,92,255,.18);border-color:rgba(124,92,255,.5)}
   .st-cine button.on{background:linear-gradient(180deg,#7c5cff,#5a3fd6);border-color:transparent;color:#fff}
   .st-cine .nm{font-size:12px;color:#c6cde0;min-width:98px;text-align:center;font-weight:600}
+  .st-cine .cine-sep{width:1px;height:22px;background:rgba(255,255,255,.16);margin:0 2px}
+  .st-cine .cine-dwell{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:#c6cde0;font-weight:600}
+  .st-cine .cine-dwell input{width:52px;height:30px;border-radius:8px;border:1px solid rgba(255,255,255,.16);
+    background:rgba(255,255,255,.05);color:#e8ecf6;font-size:12.5px;font-weight:700;text-align:center;padding:0 4px}
+  .st-cine .cine-dwell input:focus-visible{outline:2px solid #7c5cff;outline-offset:1px}
+  .st-cine .cine-dwell select{height:30px;border-radius:8px;border:1px solid rgba(255,255,255,.16);
+    background:rgba(255,255,255,.05);color:#e8ecf6;font-size:12px;font-weight:600;padding:0 4px;cursor:pointer}
+  .st-cine .cine-dwell select:focus-visible{outline:2px solid #7c5cff;outline-offset:1px}
+  /* Cinematic playlist — reorderable pop-up card (always available in Cinematic) */
+  .st-cine-pl{position:absolute;left:50%;top:100px;transform:translateX(-50%);z-index:9;display:none;
+    flex-direction:column;gap:8px;width:min(340px,92vw);max-height:min(60vh,520px);padding:12px 12px 10px;
+    border-radius:14px;background:rgba(12,14,24,.95);backdrop-filter:blur(12px);
+    border:1px solid rgba(124,92,255,.42);box-shadow:0 14px 40px rgba(0,0,0,.55)}
+  .st-cine-pl.on{display:flex}
+  .st-cine-pl .pl-head{display:flex;align-items:center;gap:8px}
+  .st-cine-pl .pl-title{font-weight:800;font-size:13px;color:#d9cffb;white-space:nowrap}
+  .st-cine-pl .pl-sub{font-size:10.5px;color:#8a93a8;white-space:nowrap}
+  .st-cine-pl .pl-spacer{flex:1}
+  .st-cine-pl .pl-head button{appearance:none;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.05);
+    color:#e8ecf6;height:26px;padding:0 9px;border-radius:8px;font-size:11.5px;font-weight:700;cursor:pointer}
+  .st-cine-pl .pl-head button:hover{background:rgba(124,92,255,.2);border-color:rgba(124,92,255,.55)}
+  .st-cine-pl .pl-rows{display:flex;flex-direction:column;gap:5px;overflow:auto;padding:2px 1px}
+  .st-cine-pl .pl-row{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:9px;
+    background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08)}
+  .st-cine-pl .pl-row.pl-drag{opacity:.5;border-color:rgba(124,92,255,.6)}
+  .st-cine-pl .pl-row.pl-over{border-color:rgba(124,92,255,.8);background:rgba(124,92,255,.14)}
+  .st-cine-pl .pl-row .pl-grip{cursor:grab;color:#8a93a8;font-size:14px;user-select:none;touch-action:none}
+  .st-cine-pl .pl-row input[type=checkbox]{width:16px;height:16px;accent-color:#7c5cff;cursor:pointer;flex:none}
+  .st-cine-pl .pl-row .pl-name{flex:1;font-size:12.5px;color:#e8ecf6;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .st-cine-pl .pl-row.pl-off .pl-name{color:#8a93a8;font-weight:500}
+  .st-cine-pl .pl-row .pl-mv{appearance:none;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.05);
+    color:#c6cde0;width:24px;height:24px;border-radius:7px;font-size:12px;cursor:pointer;flex:none;
+    display:inline-flex;align-items:center;justify-content:center}
+  .st-cine-pl .pl-row .pl-mv:hover:not(:disabled){background:rgba(124,92,255,.2);border-color:rgba(124,92,255,.55)}
+  .st-cine-pl .pl-row .pl-mv:disabled{opacity:.32;cursor:not-allowed}
+  .st-cine-pl .pl-row *:focus-visible,.st-cine-pl .pl-head button:focus-visible{outline:2px solid #7c5cff;outline-offset:1px}
+  .st-cine-pl .pl-note{font-size:10.5px;line-height:1.45;color:#8a93a8}
   /* Sun's End — independent stellar-death playback */
   .st-btn#stNova.on{background:linear-gradient(180deg,#ff8a3c,#e0431f);border-color:transparent;color:#fff;
     box-shadow:0 0 0 1px rgba(255,138,60,.5),0 6px 18px rgba(224,67,31,.35)}
@@ -370,6 +431,18 @@ function injectCSS(){
     box-shadow:0 20px 60px rgba(0,0,0,.6);z-index:20}
   .st-nova .nv-menu button{white-space:nowrap;justify-content:flex-start;text-align:left;min-width:210px}
   .st-nova-flash{position:absolute;inset:0;z-index:7;pointer-events:none;opacity:0;background:radial-gradient(circle at 50% 50%,#fff 0%,#ffd9a0 38%,rgba(255,180,110,0) 72%)}
+  /* Event Cinema — the Sun's-End player re-skinned for events (violet accent) */
+  .st-nova.st-ec{border-color:rgba(124,92,255,.44)}
+  .st-nova.st-ec .nv-title{color:#d9cffb}
+  .st-nova.st-ec .nv-note b{color:#d9cffb}
+  .st-nova.st-ec .ec-idx{font-size:11px;color:#8a93a8;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .st-nova.st-ec .nv-scrub{background:linear-gradient(90deg,#7c5cff 0%,#5a3fd6 var(--nvp,0%),rgba(255,255,255,.14) var(--nvp,0%))}
+  .st-nova.st-ec .nv-scrub::-webkit-slider-thumb{border-color:#5a3fd6}
+  .st-nova.st-ec .nv-scrub::-moz-range-thumb{border-color:#5a3fd6}
+  .st-nova.st-ec button:hover{background:rgba(124,92,255,.2);border-color:rgba(124,92,255,.55)}
+  .st-nova.st-ec #stEcExport.nv-rec{color:#ffb3b3;border-color:rgba(255,90,90,.6);background:rgba(255,60,60,.18)}
+  .st-nova.st-ec #stEcFocus.on{background:linear-gradient(180deg,#7c5cff,#5a3fd6);border-color:transparent;color:#fff;
+    box-shadow:0 0 0 1px rgba(124,92,255,.5),0 6px 18px rgba(90,63,214,.35)}
   @media (max-width:820px){
     .st-panel{width:44vw;max-width:250px;top:60px;bottom:120px}
     .st-hint{display:none}
@@ -517,6 +590,29 @@ function buildDOM(){
       <span class="nm" id="stCineName">Auto-directed</span>
       <button id="stCineNext" title="Nearest neighbouring body — next">→</button>
       <button id="stCineFocus" title="Focus the selected body (or nearest body)">◎ Focus</button>
+      <span class="cine-sep" aria-hidden="true"></span>
+      <label class="cine-dwell" for="stCineDwellN" title="How long the auto-director holds each scene before switching to the next in the playlist">
+        <span>Hold each</span>
+        <input type="number" id="stCineDwellN" min="1" max="999" step="1" value="8" inputmode="numeric" aria-label="Auto-switch hold time — amount" />
+        <select id="stCineDwellU" aria-label="Auto-switch hold time — unit">
+          <option value="1">sec</option>
+          <option value="60">min</option>
+          <option value="3600">hr</option>
+        </select>
+      </label>
+      <button id="stCinePlaylist" title="Choose which scenes the auto-director visits, and the order" aria-haspopup="dialog" aria-expanded="false">☰ Playlist</button>
+    </div>
+
+    <div class="st-cine-pl" id="stCinePlCard" role="dialog" aria-label="Cinematic playlist order" aria-modal="false">
+      <div class="pl-head">
+        <span class="pl-title">🎬 Playlist order</span>
+        <span class="pl-sub">Cinematic auto-switch</span>
+        <span class="pl-spacer"></span>
+        <button id="stCinePlReset" class="pl-reset" title="Restore the default Sun-outward order and re-enable every scene">↺ Reset</button>
+        <button id="stCinePlClose" class="pl-close" title="Close" aria-label="Close playlist">✕</button>
+      </div>
+      <div class="pl-rows" id="stCinePlRows"></div>
+      <div class="pl-note">Drag ⠿ or use ↑ ↓ to reorder · tick to include · the show loops through your enabled scenes in this order.</div>
     </div>
 
     <div class="st-nova-flash" id="stNovaFlash"></div>
@@ -533,6 +629,24 @@ function buildDOM(){
       </div>
       <input type="range" class="nv-scrub" id="stNovaScrub" min="0" max="1000" value="0" step="1" aria-label="Scrub the time-lapse" />
       <div class="nv-note" id="stNovaNote"></div>
+    </div>
+
+    <div class="st-nova st-ec" id="stEcBar">
+      <div class="nv-top">
+        <span class="nv-title">🎬 <span id="stEcTitle">Event</span></span>
+        <span class="nv-time" id="stEcTime"></span>
+        <span class="nv-spacer"></span>
+        <span class="ec-idx" id="stEcIdx"></span>
+        <button id="stEcPrev" title="Previous event">←</button>
+        <button id="stEcPlay" title="Pause / resume playback">⏸</button>
+        <button id="stEcReplay" title="Replay this event from the beginning">↺</button>
+        <button id="stEcNext" title="Next event">→</button>
+        <button id="stEcFocus" title="Focus lock — hold on your selected object and stop the auto camera" aria-pressed="false">◎ Focus</button>
+        <button id="stEcExport" title="Export this event scene as an MP4 video">⤓ MP4</button>
+        <button id="stEcExit" title="Exit — return to the normal 3D view">✕</button>
+      </div>
+      <input type="range" class="nv-scrub" id="stEcScrub" min="0" max="1000" value="0" step="1" aria-label="Scrub the event timeline" />
+      <div class="nv-note" id="stEcNote"></div>
     </div>
 
     <div class="st-time">
@@ -573,6 +687,7 @@ function buildDOM(){
   camBtnCine  = root.querySelector('#stCine');
   novaBar     = root.querySelector('#stNovaBar');
   novaFlashEl = root.querySelector('#stNovaFlash');
+  ecBar       = root.querySelector('#stEcBar');
 
   // event dropdown — grouped by category
   const sel = root.querySelector('#stEvent');
@@ -582,7 +697,7 @@ function buildDOM(){
     cats.map(g=>`<optgroup label="${g.cat}">`+
       g.items.map(i=>`<option value="${i}">${EVENTS[i].date || EVENTS[i].epoch} · ${EVENTS[i].name}</option>`).join('')+
       `</optgroup>`).join('');
-  sel.addEventListener('change', ()=>{ if (sel.value!=='') jumpToEvent(+sel.value); });
+  sel.addEventListener('change', ()=>{ if (sel.value!=='') ecEnter(+sel.value); });
 
   // wiring
   root.querySelector('#stView2d').addEventListener('click', close);
@@ -592,6 +707,14 @@ function buildDOM(){
   root.querySelector('#stCinePrev').addEventListener('click', ()=>cineStep(-1));
   root.querySelector('#stCineNext').addEventListener('click', ()=>cineStep(1));
   root.querySelector('#stCineFocus').addEventListener('click', cineFocusSelected);
+  // Auto-director dwell time + reorderable playlist card
+  root.querySelector('#stCineDwellN').addEventListener('input', cineApplyDwellFromUI);
+  root.querySelector('#stCineDwellN').addEventListener('change', ()=>{ cineApplyDwellFromUI(); cineSyncDwellUI(); });
+  root.querySelector('#stCineDwellU').addEventListener('change', ()=>{ cineApplyDwellFromUI(); cineSyncDwellUI(); });
+  root.querySelector('#stCinePlaylist').addEventListener('click', ()=>cinePlToggleCard());
+  root.querySelector('#stCinePlClose').addEventListener('click', ()=>cinePlToggleCard(false));
+  root.querySelector('#stCinePlReset').addEventListener('click', cinePlReset);
+  cineLoadPrefs(); cineSyncDwellUI();
   // Sun's End — independent stellar-death time-lapse (toggle on/off at any time)
   root.querySelector('#stNova').addEventListener('click', ()=>novaToggle());
   root.querySelector('#stNovaPlay').addEventListener('click', novaTogglePlay);
@@ -600,6 +723,15 @@ function buildDOM(){
   root.querySelector('#stNovaExport').addEventListener('click', novaExportMenu);
   root.querySelector('#stNovaExit').addEventListener('click', ()=>novaExit());
   root.querySelector('#stNovaScrub').addEventListener('input', e=>novaSeek((+e.target.value)/1000));
+  // Event Cinema — immersive player for every Jump-to-an-event scene
+  root.querySelector('#stEcPrev').addEventListener('click', ()=>ecStep(-1));
+  root.querySelector('#stEcNext').addEventListener('click', ()=>ecStep(1));
+  root.querySelector('#stEcPlay').addEventListener('click', ecTogglePlay);
+  root.querySelector('#stEcReplay').addEventListener('click', ecReplay);
+  root.querySelector('#stEcFocus').addEventListener('click', ecToggleFocus);
+  root.querySelector('#stEcExport').addEventListener('click', ecExportMenu);
+  root.querySelector('#stEcExit').addEventListener('click', ()=>ecExit());
+  root.querySelector('#stEcScrub').addEventListener('input', e=>ecSeek((+e.target.value)/1000));
   root.querySelector('#stAdd').addEventListener('click', addPrimitiveMenu);
   root.querySelector('#stImport').addEventListener('click', ()=>root.querySelector('#stFile').click());
   root.querySelector('#stFile').addEventListener('change', e=>{ handleFiles(e.target.files); e.target.value=''; });
@@ -935,6 +1067,49 @@ function activeEclipse(jd){
   return null;
 }
 
+/* ---- Auto-director dwell + playlist ------------------------------------------
+   The Cinematic auto-director no longer cuts between a fixed, random handful of
+   planets. Instead it follows an explicit, user-owned playlist (order + which
+   scenes are included) and holds each scene for a user-set dwell time. Both are
+   remembered per device so the show the user composed persists across visits. */
+function cineDefaultOrder(){
+  // Sun outward, with the Moon nested right after Earth — the natural tour.
+  return ['sun','mercury','venus','earth','moon','mars','jupiter','saturn','uranus','neptune'];
+}
+function cineLoadPrefs(){
+  try{ const d = parseFloat(localStorage.getItem(CINE_DWELL_KEY)); if (isFinite(d) && d>0) cineDwellSec = Math.min(86400, Math.max(1, d)); }catch(_){}
+  try{
+    const raw = localStorage.getItem(CINE_PL_KEY);
+    if (raw){ const arr = JSON.parse(raw); if (Array.isArray(arr)) cinePlaylist = arr.filter(x=>x&&typeof x.id==='string').map(x=>({ id:x.id, on:x.on!==false })); }
+  }catch(_){}
+}
+function cineSavePrefs(){
+  try{ localStorage.setItem(CINE_DWELL_KEY, String(cineDwellSec)); }catch(_){}
+  try{ localStorage.setItem(CINE_PL_KEY, JSON.stringify(cinePlaylist||[])); }catch(_){}
+}
+// Build the playlist once from the default order (only scenes that actually
+// exist), then keep it reconciled with the live scene: append any imported
+// objects at the tail, drop entries whose object has gone away. This is the
+// "always working" guarantee — the card reflects exactly what's in the scene.
+function cineEnsurePlaylist(){
+  const probe = _cineA;
+  if (!cinePlaylist){
+    cinePlaylist = cineDefaultOrder()
+      .filter(id => cineCenterOf(id, probe) >= 0)
+      .map(id => ({ id, on:true }));
+  }
+  const live = cineFocusList();
+  const liveSet = new Set(live);
+  cinePlaylist = cinePlaylist.filter(it => liveSet.has(it.id));
+  for (const id of live){ if (!cinePlaylist.some(it => it.id===id)) cinePlaylist.push({ id, on:true }); }
+  return cinePlaylist;
+}
+function cineEnabledSeq(){
+  cineEnsurePlaylist();
+  const probe = _cineB;
+  return cinePlaylist.filter(it => it.on && cineCenterOf(it.id, probe) >= 0).map(it => it.id);
+}
+
 function tickCinematic(dt){
   // The user parked the camera (clicked a thumbtack, or picked a body in the
   // Scene list) → hold that POV indefinitely and never let the auto-director
@@ -951,17 +1126,29 @@ function tickCinematic(dt){
   if (cineFocusOn && cineFocusId){ cineTickFocus(dt); return; }
   cineT += dt; cineNextCut -= dt;
   if (cineNextCut <= 0){
-    const keys = ['earth','earth','mars','jupiter','saturn','venus'];
-    cineFocusKey = keys[(Math.random()*keys.length)|0];
-    cineNextCut = 6 + Math.random()*4;
+    const seq = cineEnabledSeq();
+    if (seq.length){
+      cinePlIndex = (cinePlIndex + 1) % seq.length;
+      cineFocusKey = seq[cinePlIndex];
+    }
+    cineNextCut = Math.max(1, cineDwellSec);     // hold each scene for the user's dwell time
   }
-  const rec = planetMeshes[cineFocusKey]; if (!rec) return;
-  const tgt = rec.group.position;
-  const radius = 6 + (PLANETS.find(p=>p.key===cineFocusKey)?.size||1)*3;
+  // Resolve the focused scene's world centre + radius (works for the Sun, any
+  // planet, the Moon, and imported objects). If it vanished mid-tour, snap to
+  // the first still-available scene rather than freezing on a dead target.
+  let cRad = cineCenterOf(cineFocusKey, _cineA);
+  if (cRad < 0){
+    const seq = cineEnabledSeq(); if (!seq.length) return;
+    cinePlIndex = Math.min(cinePlIndex, seq.length - 1);
+    cineFocusKey = seq[cinePlIndex];
+    cRad = cineCenterOf(cineFocusKey, _cineA); if (cRad < 0) return;
+  }
+  const tgt = _cineA;
+  const radius = 6 + cRad*3;
   const ang = cineT*0.18;
   const desired = new THREE.Vector3(
     tgt.x + Math.cos(ang)*radius,
-    tgt.y + 2.4 + Math.sin(cineT*0.5)*1.2,
+    tgt.y + Math.max(2.4, radius*0.28) + Math.sin(cineT*0.5)*1.2,
     tgt.z + Math.sin(ang)*radius
   );
   camera.position.lerp(desired, 1 - Math.pow(0.001, dt));
@@ -1044,6 +1231,7 @@ function cineFocusSelected(){
 }
 function cineAuto(){
   cineFocusOn = false; cineFocusId = null; cineHist.length = 0; cineVisited = new Set();
+  const seq = cineEnabledSeq(); cinePlIndex = 0; if (seq.length) cineFocusKey = seq[0];
   cineNextCut = 0; cineLastInput = 0; cineParked = false;   // "Auto" hands control back to the director
   if (camMode!=='cinematic') setCamMode('cinematic'); else cineUpdateDock();
 }
@@ -1082,6 +1270,81 @@ function cineUpdateDock(){
   if (auto) auto.classList.toggle('on', !cineFocusOn);
   const focus = dock.querySelector('#stCineFocus');
   if (focus) focus.classList.toggle('on', cineFocusOn);
+  if (camMode!=='cinematic') cinePlToggleCard(false);   // the playlist card belongs to Cinematic mode
+}
+
+/* ---- Cinematic playlist card — include + reorder the auto-switch scenes ----
+   "Always working": rebuilt from the live scene each time it opens, so the Sun,
+   every planet, the Moon and any imported object appear, and reordering / toggling
+   takes effect immediately on the next cut. Reorder by drag (⠿) or ↑ ↓ keys —
+   both paths kept for full keyboard + pointer accessibility (WCAG 2.2). */
+function cinePlCardBuild(){
+  if (!root) return;
+  const rows = root.querySelector('#stCinePlRows'); if (!rows) return;
+  cineEnsurePlaylist();
+  rows.innerHTML = '';
+  cinePlaylist.forEach((it, idx) => {
+    const nm = cineName(it.id);
+    const row = document.createElement('div');
+    row.className = 'pl-row' + (it.on ? '' : ' pl-off');
+    row.setAttribute('draggable','true');
+    row.dataset.idx = String(idx);
+    row.innerHTML =
+      `<span class="pl-grip" aria-hidden="true">⠿</span>`+
+      `<input type="checkbox" ${it.on?'checked':''} aria-label="Include ${nm} in the cinematic auto-switch" />`+
+      `<span class="pl-name">${nm}</span>`+
+      `<button class="pl-mv pl-up" title="Move up" aria-label="Move ${nm} earlier" ${idx===0?'disabled':''}>↑</button>`+
+      `<button class="pl-mv pl-down" title="Move down" aria-label="Move ${nm} later" ${idx===cinePlaylist.length-1?'disabled':''}>↓</button>`;
+    row.querySelector('input').addEventListener('change', e=>{ it.on = e.target.checked; row.classList.toggle('pl-off', !it.on); cineSavePrefs(); });
+    row.querySelector('.pl-up').addEventListener('click', ()=>cinePlMove(idx,-1));
+    row.querySelector('.pl-down').addEventListener('click', ()=>cinePlMove(idx, 1));
+    row.addEventListener('dragstart', e=>{ cinePlDragFrom=idx; row.classList.add('pl-drag'); try{ e.dataTransfer.effectAllowed='move'; e.dataTransfer.setData('text/plain', String(idx)); }catch(_){} });
+    row.addEventListener('dragend', ()=>{ row.classList.remove('pl-drag'); rows.querySelectorAll('.pl-over').forEach(r=>r.classList.remove('pl-over')); });
+    row.addEventListener('dragover', e=>{ e.preventDefault(); try{ e.dataTransfer.dropEffect='move'; }catch(_){} row.classList.add('pl-over'); });
+    row.addEventListener('dragleave', ()=>row.classList.remove('pl-over'));
+    row.addEventListener('drop', e=>{ e.preventDefault(); row.classList.remove('pl-over'); if (cinePlDragFrom!=null && cinePlDragFrom!==idx) cinePlReorder(cinePlDragFrom, idx); cinePlDragFrom=null; });
+    rows.appendChild(row);
+  });
+}
+function cinePlMove(idx, dir){
+  const j = idx + dir;
+  if (j < 0 || j >= cinePlaylist.length) return;
+  const t = cinePlaylist[idx]; cinePlaylist[idx] = cinePlaylist[j]; cinePlaylist[j] = t;
+  cineSavePrefs(); cinePlCardBuild();
+}
+function cinePlReorder(from, to){
+  const [it] = cinePlaylist.splice(from, 1);
+  cinePlaylist.splice(to, 0, it);
+  cineSavePrefs(); cinePlCardBuild();
+}
+function cinePlToggleCard(force){
+  const card = root && root.querySelector('#stCinePlCard'); if (!card) return;
+  const willOpen = (force===undefined) ? !card.classList.contains('on') : !!force;
+  if (willOpen){ cinePlCardBuild(); card.classList.add('on'); }
+  else card.classList.remove('on');
+  const btn = root.querySelector('#stCinePlaylist'); if (btn) btn.setAttribute('aria-expanded', String(willOpen));
+}
+function cinePlReset(){
+  cinePlaylist = null; cineEnsurePlaylist();     // rebuild from the default Sun-outward order, all enabled
+  cinePlIndex = 0; cineSavePrefs(); cinePlCardBuild();
+}
+function cineApplyDwellFromUI(){
+  if (!root) return;
+  const n = root.querySelector('#stCineDwellN'), u = root.querySelector('#stCineDwellU');
+  if (!n || !u) return;
+  let v = parseFloat(n.value); if (!isFinite(v) || v <= 0) v = 1;
+  const unit = parseFloat(u.value) || 1;
+  cineDwellSec = Math.min(86400, Math.max(1, v * unit));
+  cineSavePrefs();
+}
+function cineSyncDwellUI(){
+  if (!root) return;
+  const n = root.querySelector('#stCineDwellN'), u = root.querySelector('#stCineDwellU');
+  if (!n || !u) return;
+  let unit = 1;
+  if (cineDwellSec >= 3600 && cineDwellSec % 3600 === 0) unit = 3600;
+  else if (cineDwellSec >= 60 && cineDwellSec % 60 === 0) unit = 60;
+  u.value = String(unit); n.value = String(cineDwellSec / unit);
 }
 function cineTickFocus(dt){
   const rad = cineCenterOf(cineFocusId, _cineA);
@@ -1175,7 +1438,7 @@ function animate(){
     const _povFly = !!(dnFlightSim && dnFlightSim.povOn);
     dnWorldSlow += ((_povFly ? 0.10 : 1) - dnWorldSlow) * Math.min(1, dt*2.4);
 
-    if (playing && !novaOn){
+    if (playing && !novaOn && !ecOn){
       simDate = new Date(simDate.getTime() + timeScale*dt*DAY_MS*dnWorldSlow);
       updatePlanets();
     }
@@ -1191,12 +1454,14 @@ function animate(){
 
     pollGamepad(dt);
     if (novaOn) novaTick(dt);
+    else if (ecOn) ecTick(dt);
     else if (camMode==='cinematic') tickCinematic(dt);
     tickDolly3D(dt);
     deepNavTick(dt);
     orbit.update();
     renderer.render(scene, camera);
     if (novaRecComp) novaRecComposite();        // grab the fresh frame for a "scene + cards" export
+    if (ecRecComp) ecRecComposite();            // …and for an Event Cinema export
 
     // local wall-clock readout (once per second)
     const nowSec = (performance.now()/1000)|0;
@@ -1972,6 +2237,7 @@ function novaUpdateUI(){
 }
 function novaEnter(){
   if (novaOn || !sun) return;
+  if (ecOn) ecExit();
   novaEnsureShell();
   _novaSaved={ camMode, sunColor:sun.material.color.getHex(),
     lightI:sunLight?sunLight.intensity:3.2, lightC:sunLight?sunLight.color.getHex():0xfff4d8,
@@ -2255,6 +2521,250 @@ function novaRecBuildOverlay(c){
     img.onerror = ()=>{ c.building=false; };
     img.src = 'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
   }catch(_){ c.building=false; }
+}
+
+/* ---------------------------------------------------------------------------
+   5b. Event Cinema — the "Sun's End" experience for every Jump-to-an-event
+   scene. Selecting an event enters an immersive player: a bottom control bar
+   (title · date/epoch · confidence, ▶/⏸, a scrubber over the event's own time
+   window, ← / → to step between events, ◎ Focus lock, ⤓ MP4, ✕ exit) while an
+   auto-director glides the camera around the framed body. Per-type scripting
+   gives each kind of event visible motion: eclipses sweep hours, meteor showers
+   a night, planetary events a season arc, deep-time epochs a slow majestic orbit.
+   ------------------------------------------------------------------------- */
+// Half-width (in days) of the sim-time sweep for a date-based event, chosen so
+// the scene actually moves: eclipses cover a few hours, showers a night, a
+// planetary event a season, everything else a handful of days.
+function ecWindowDays(e){
+  if (!e || e.cosmic || !e.date) return 0;
+  switch (e.type){
+    case 'solar': case 'lunar':  return 0.5;   // ±6 h — the Moon/Sun geometry shifts
+    case 'meteor':               return 1;     // ±12 h — one night of the shower
+    case 'planet': case 'planetary': case 'opposition': case 'conjunction': return 120; // ±60 d — a season arc
+    default:                     return 8;     // ±4 d
+  }
+}
+function ecFrameKeyFor(e){
+  const f = e && e.focus;
+  if (f && (planetMeshes[f] || f==='sun' || f==='moon')) return f;
+  return 'earth';
+}
+// The point the camera holds: with Focus lock on, the user's selected object (or
+// the framed body); otherwise the event's framed body.
+function ecTargetCenter(out){
+  if (ecFocusOn && selected){
+    if (selected.type==='planet'){ const rec=planetMeshes[selected.key]; if(rec&&rec.group){ rec.group.getWorldPosition(out); return (PLANETS.find(p=>p.key===selected.key)?.size||1); } }
+    else if (selected.type==='imported' && selected.im){ const r=cineCenterOf(selected.im.id,out); if(r>=0) return r; }
+  }
+  const r = cineCenterOf(ecFocusKey, out);
+  return r>=0 ? r : cineCenterOf('earth', out);
+}
+function ecApply(frac){
+  const e = EVENTS[ecIndex]; if (!e) return;
+  if (!e.cosmic && e.date){
+    const half = ecWindowDays(e)/2;
+    if (half > 0){
+      const base = new Date(e.date+'T00:00:00Z').getTime();
+      simDate = new Date(base + (frac-0.5)*2*half*DAY_MS);
+      try{ updatePlanets(); }catch(_){}
+    }
+  }
+}
+function ecFrameCamera(dt){
+  const rad = ecTargetCenter(_cineA);
+  const r = 6 + Math.max(rad, 0.5)*3.2;
+  const ph = (ecT0 + ecT);
+  const ang = ph*0.16;
+  const desired = new THREE.Vector3(
+    _cineA.x + Math.cos(ang)*r,
+    _cineA.y + Math.max(2.4, r*0.30) + Math.sin(ph*0.4)*r*0.10,
+    _cineA.z + Math.sin(ang)*r
+  );
+  camera.position.lerp(desired, 1 - Math.pow(0.0016, dt));
+  orbit.target.lerp(_cineA, 1 - Math.pow(0.004, dt));
+}
+function ecUpdateUI(){
+  if (!ecBar || !root) return;
+  const e = EVENTS[ecIndex]; if (!e) return;
+  const f = _nvClamp(ecT/EC_DUR, 0, 1);
+  const titleEl = root.querySelector('#stEcTitle'); if (titleEl) titleEl.textContent = e.name;
+  const timeEl = root.querySelector('#stEcTime');
+  if (timeEl){
+    timeEl.textContent = e.cosmic ? e.epoch
+      : (e.date && ecWindowDays(e)>0 ? simDate.toISOString().slice(0,10) : (e.date||''));
+  }
+  const idxEl = root.querySelector('#stEcIdx'); if (idxEl) idxEl.textContent = (ecIndex+1)+' / '+EVENTS.length;
+  const scrub = root.querySelector('#stEcScrub');
+  if (scrub){ scrub.value=String(Math.round(f*1000)); scrub.style.setProperty('--nvp',(f*100).toFixed(1)+'%'); }
+  const play = root.querySelector('#stEcPlay'); if (play) play.textContent = ecPlaying?'⏸':'▶';
+  const note = root.querySelector('#stEcNote');
+  if (note){
+    const link = (!e.cosmic && e.link==='trading')
+      ? `<br><a href="${tradingURL()}" target="_blank" rel="noopener" style="color:#b7a5ff;font-weight:700;text-decoration:none">Open EWI Trading Command Center →</a>` : '';
+    note.innerHTML = (e.conf?confChip(e.conf):'') + `<span style="color:#c6cde0">${e.note||''}</span>${link}`;
+  }
+}
+function ecShowBar(on){ if (ecBar) ecBar.classList.toggle('on', on); }
+function ecEnter(i){
+  const e = EVENTS[i]; if (!e) return;
+  if (novaOn) novaExit();
+  if (!ecOn) _ecSaved = { camMode, simDate:new Date(simDate.getTime()), pins:dnPinsVisible };
+  if (ecRec) ecRecStop(false);
+  ecIndex = i;
+  playing = false; if (playBtn) playBtn.textContent = '▶';
+  try{ setRealtime(false); }catch(_){}
+  clearMeteors(); clearEventPins();
+  if (camMode==='cinematic') setCamMode('explore');   // Event Cinema drives the camera itself
+  ecFocusKey = ecFrameKeyFor(e);
+  ecFocusOn = false;
+  const fbtn = root && root.querySelector('#stEcFocus'); if (fbtn){ fbtn.classList.remove('on'); fbtn.setAttribute('aria-pressed','false'); }
+  ecOn = true; ecPlaying = true; ecT = 0; ecT0 = performance.now()/1000; cineLastInput = 0;
+  // per-type scene dressing
+  if (e.type==='meteor') startMeteors();
+  if (!e.cosmic && Array.isArray(e.where)) earthPin(e.where[0], e.where[1], 0xff5a7a, e.name, true);
+  ecApply(0);
+  // establishing shot: back off along +Z from the framed body, scaled to its size
+  const rad = cineCenterOf(ecFocusKey, _cineA); const r = 6 + Math.max(rad,0.5)*3.2;
+  camera.position.set(_cineA.x, _cineA.y + Math.max(3, r*0.34), _cineA.z + r);
+  orbit.target.copy(_cineA);
+  // keep the standalone badge hidden — the event's story lives in the bar now
+  if (eventNoteEl) eventNoteEl.style.display = 'none';
+  ecShowBar(true); ecUpdateUI();
+  toast('Event Cinema · ' + e.name + ' — drag to change your view · ← → for another event · ✕ to exit');
+}
+function ecExit(){
+  if (!ecOn) return;
+  if (ecRec) ecRecStop(false);
+  ecOn = false; ecPlaying = false; ecFocusOn = false;
+  const fbtn = root && root.querySelector('#stEcFocus'); if (fbtn){ fbtn.classList.remove('on'); fbtn.setAttribute('aria-pressed','false'); }
+  ecShowBar(false);
+  clearMeteors(); clearEventPins();
+  if (_ecSaved){ simDate = _ecSaved.simDate; try{ updatePlanets(); }catch(_){} if (_ecSaved.camMode) setCamMode(_ecSaved.camMode); }
+  _ecSaved = null;
+  toast('Returned to the 3D view');
+}
+function ecStep(dir){
+  if (!ecOn){ if (ecIndex<0) return; ecEnter(ecIndex); return; }
+  let j = ecIndex + (dir<0 ? -1 : 1);
+  if (j < 0) j = EVENTS.length - 1;
+  if (j >= EVENTS.length) j = 0;
+  ecEnter(j);
+  const sel = root && root.querySelector('#stEvent'); if (sel) sel.value = String(j);
+}
+function ecTogglePlay(){ if(!ecOn) return; if(!ecPlaying && ecT>=EC_DUR) ecT=0; ecPlaying=!ecPlaying; cineLastInput=0; ecUpdateUI(); }
+function ecReplay(){ if(!ecOn) return; ecT=0; ecPlaying=true; cineLastInput=0; ecApply(0); ecUpdateUI(); }
+function ecSeek(frac){ if(!ecOn) return; ecPlaying=false; ecT=_nvClamp(frac,0,1)*EC_DUR; ecApply(_nvClamp(frac,0,1)); ecUpdateUI(); }
+function ecToggleFocus(){
+  if (!ecOn) return;
+  ecFocusOn = !ecFocusOn;
+  const b = root && root.querySelector('#stEcFocus');
+  if (b){ b.classList.toggle('on', ecFocusOn); b.setAttribute('aria-pressed', String(ecFocusOn)); }
+  toast(ecFocusOn
+    ? 'Focus lock on — holding on your selected object; the scene keeps playing'
+    : 'Focus lock off — the camera resumes its cinematic auto-direction');
+}
+function ecTick(dt){
+  if (ecPlaying){ ecT += dt; if (ecT>=EC_DUR){ ecT=EC_DUR; ecPlaying=false; } }
+  ecApply(_nvClamp(ecT/EC_DUR, 0, 1));
+  ecFrameCamera(dt);
+  _ecUiAccum += dt; if (_ecUiAccum>0.1){ _ecUiAccum=0; ecUpdateUI(); }
+  if (ecRec && !ecRec.finishing && !ecPlaying && ecT>=EC_DUR){
+    ecRec.finishing = true;
+    setTimeout(()=>{ ecRecStop(true); }, 450);
+  }
+}
+
+/* Event Cinema — MP4 export (mirrors Sun's End: scene-only or scene + on-screen
+   cards, records one full playthrough from the user's current POV, saves on
+   completion; MP4 preferred, WebM fallback). */
+function ecExportMenu(){
+  if (ecRec){ ecRecStop(true); return; }
+  if (!ecOn || !root) return;
+  const host = root.querySelector('#stEcBar'); if (!host) return;
+  const existing = root.querySelector('#stEcExpMenu');
+  if (existing){ existing.remove(); return; }
+  const m = document.createElement('div');
+  m.id='stEcExpMenu'; m.className='nv-menu';
+  m.innerHTML =
+    `<button data-m="scene">\ud83c\udfac Scene only</button>`+
+    `<button data-m="cards">\ud83d\uddc2 Scene + on-screen cards</button>`;
+  host.appendChild(m);
+  m.addEventListener('click', e=>{ const b=e.target.closest('button'); if(!b) return; const mode=b.getAttribute('data-m'); m.remove(); ecRecStart(mode); });
+  setTimeout(()=>{
+    const off=(ev)=>{ if (!m.contains(ev.target) && ev.target.id!=='stEcExport'){ m.remove(); document.removeEventListener('pointerdown', off, true); } };
+    document.addEventListener('pointerdown', off, true);
+  }, 0);
+}
+function ecRecStart(mode){
+  if (ecRec || !ecOn || !renderer) return;
+  const mime = novaPickVideoMime();
+  if (mime===null){ toast('Video export is not supported in this browser'); return; }
+  const gl = renderer.domElement;
+  const srcW = gl.width || gl.clientWidth, srcH = gl.height || gl.clientHeight;
+  if (!srcW || !srcH){ toast('Nothing to record yet — try again in a moment'); return; }
+  const capW = Math.min(1920, srcW), capH = Math.max(2, Math.round(capW * srcH/srcW));
+  let stream;
+  if (mode==='cards'){
+    const cap = document.createElement('canvas'); cap.width=capW; cap.height=capH;
+    const cctx = cap.getContext('2d', { alpha:false });
+    cctx.fillStyle='#05060d'; cctx.fillRect(0,0,capW,capH);
+    ecRecComp = { canvas:cap, ctx:cctx, capW, capH, overlay:null, building:false, lastBuild:0 };
+    stream = cap.captureStream(30);
+  } else {
+    try{ stream = gl.captureStream(30); }
+    catch(_){ toast('This browser blocked canvas capture — cannot export'); return; }
+  }
+  const chunks = [];
+  let rec;
+  try{ rec = mime ? new MediaRecorder(stream, { mimeType:mime, videoBitsPerSecond:8_000_000 }) : new MediaRecorder(stream); }
+  catch(_){ try{ rec = new MediaRecorder(stream); }catch(e2){ toast('Could not start the video recorder'); ecRecComp=null; return; } }
+  const ext = ((rec.mimeType||mime||'').indexOf('mp4')>=0) ? 'mp4' : 'webm';
+  const evName = (EVENTS[ecIndex] && EVENTS[ecIndex].name || 'event').replace(/[^\w]+/g,'-').replace(/^-+|-+$/g,'').slice(0,40) || 'event';
+  rec.ondataavailable = e=>{ if (e.data && e.data.size) chunks.push(e.data); };
+  rec.onstop = ()=>{
+    const save = !!(ecRec && ecRec.save);
+    ecRecComp = null; ecRec = null; _ecRecRestoreUI();
+    if (!save){ toast('Export cancelled'); return; }
+    if (!chunks.length){ toast('Recording produced no data'); return; }
+    const blob = new Blob(chunks, { type: chunks[0].type || mime || 'video/mp4' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const ts = new Date().toISOString().replace(/[-:]/g,'').replace('T','-').slice(0,15);
+    a.href=url; a.download=`EWI-Cosmos-Event-${evName}-${mode==='cards'?'with-cards':'scene'}-${ts}.${ext}`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>{ try{ URL.revokeObjectURL(url); }catch(_){} }, 5000);
+    toast(ext==='mp4' ? 'Saved your event cinematic (MP4)' : 'Saved your event cinematic (WebM — this browser can’t record MP4)');
+  };
+  rec.onerror = ()=>{ ecRecComp=null; ecRec=null; _ecRecRestoreUI(); toast('Recording error — export stopped'); };
+  ecRec = { rec, mode, save:false, finishing:false };
+  ecT=0; ecPlaying=true; ecApply(0); ecUpdateUI();
+  cineLastInput = performance.now();
+  _ecRecSetUI(true);
+  try{ rec.start(100); }catch(_){ try{ rec.start(); }catch(e3){ ecRecComp=null; ecRec=null; _ecRecRestoreUI(); toast('Could not start the video recorder'); return; } }
+  toast(mode==='cards'
+    ? 'Recording this event with your on-screen cards — it saves automatically when the scene ends'
+    : 'Recording this event — it saves automatically when the scene ends');
+}
+function ecRecStop(save){
+  if (!ecRec) return;
+  ecRec.save = !!save;
+  try{ ecRec.rec.stop(); }catch(_){ ecRecComp=null; ecRec=null; _ecRecRestoreUI(); }
+}
+function _ecRecSetUI(on){
+  if (!root) return;
+  const b = root.querySelector('#stEcExport');
+  if (b){ b.classList.toggle('nv-rec', on); b.textContent = on ? '● Stop' : '⤓ MP4'; b.title = on ? 'Stop and save the recording now' : 'Export this event scene as an MP4 video'; }
+  ['#stEcScrub','#stEcPlay','#stEcReplay','#stEcPrev','#stEcNext'].forEach(sel=>{ const el = root.querySelector(sel); if (el) el.disabled = on; });
+}
+function _ecRecRestoreUI(){ _ecRecSetUI(false); }
+function ecRecComposite(){
+  const c = ecRecComp; if (!c) return;
+  try{
+    c.ctx.drawImage(renderer.domElement, 0,0, c.capW, c.capH);
+    if (c.overlay) c.ctx.drawImage(c.overlay, 0,0, c.capW, c.capH);
+    const now = performance.now();
+    if (!c.building && now-c.lastBuild>280){ c.lastBuild=now; novaRecBuildOverlay(c); }
+  }catch(_){}
 }
 
 /* ---------------------------------------------------------------------------
@@ -2774,6 +3284,7 @@ function openStudio(){
 }
 function close(){
   open = false; root.classList.remove('on');
+  if (ecOn) ecExit();                           // leave Event Cinema cleanly
   if (novaOn) novaExit();                       // restore the Sun + planets before leaving 3D
   toggleSuiteChrome(false);
   syncViewSwitch(false);
@@ -3541,4 +4052,15 @@ window.__cosmosStudio = { open:openStudio, close, heliocentric, auToScene, PLANE
   get novaSunScale(){ return sun ? +sun.scale.x.toFixed(4) : null; },
   get novaReach(){ return +novaReach(_nvClamp(novaT/NOVA_DUR,0,1)).toFixed(3); },
   get novaVisiblePlanets(){ return PLANETS.filter(p=>planetMeshes[p.key]&&planetMeshes[p.key].group.visible).map(p=>p.key); },
+  // Event Cinema hooks
+  ecEnter:(i)=>ecEnter(i), ecExit:()=>ecExit(), ecStep:(d)=>ecStep(d), ecSeek:(f)=>ecSeek(f),
+  ecPlay:()=>ecTogglePlay(), ecReplay:()=>ecReplay(), ecFocus:()=>ecToggleFocus(),
+  get ecOn(){ return ecOn; }, get ecPlaying(){ return ecPlaying; }, get ecIndex(){ return ecIndex; },
+  get ecFrac(){ return +(_nvClamp(ecT/EC_DUR,0,1)).toFixed(4); }, get ecFocusKey(){ return ecFocusKey; },
+  ecTick:(dt)=>{ try{ ecTick(dt||0.016); }catch(_){} },
+  // Cinematic playlist + dwell hooks
+  get cineDwellSec(){ return cineDwellSec; }, setCineDwell:(s)=>{ cineDwellSec=Math.min(86400,Math.max(1,+s||1)); cineSavePrefs(); cineSyncDwellUI(); },
+  get cinePlaylist(){ return (cineEnsurePlaylist()||[]).map(it=>({id:it.id,on:it.on})); },
+  cineEnabledSeq:()=>cineEnabledSeq(), cinePlMove:(i,d)=>cinePlMove(i,d), cineAuto:()=>cineAuto(),
+  cineTick:(dt)=>{ try{ tickCinematic(dt||0.016); }catch(_){} }, get cineFocusKey(){ return cineFocusKey; },
   get dnFlightActive(){ return !!dnFlightSim; }, get dnWorldSlow(){ return dnWorldSlow; }, get airportCount(){ return Object.keys(AIRPORTS).length; } };
