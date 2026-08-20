@@ -312,7 +312,13 @@ function injectCSS(){
     display:flex;flex-direction:column;overflow:hidden;z-index:4}
   .st-left{left:12px}.st-right{right:12px}
   .st-panel h4{margin:0;padding:11px 13px;font-size:11px;text-transform:uppercase;letter-spacing:.08em;
-    color:#9aa3bd;border-bottom:1px solid rgba(255,255,255,.07)}
+    color:#9aa3bd;border-bottom:1px solid rgba(255,255,255,.07);
+    display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .st-panel h4 .st-x{appearance:none;border:0;background:rgba(255,255,255,.06);color:#c6cde0;
+    width:24px;height:24px;border-radius:7px;font-size:12px;line-height:1;cursor:pointer;flex:none;
+    display:inline-flex;align-items:center;justify-content:center;transition:background .15s,color .15s}
+  .st-panel h4 .st-x:hover{background:rgba(255,90,90,.28);color:#fff}
+  .st-panel h4 .st-x:focus-visible{outline:2px solid #7c5cff;outline-offset:2px}
   .st-scroll{overflow:auto;padding:8px}
   .st-item{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:9px;cursor:pointer;font-size:12.5px}
   .st-item:hover{background:rgba(255,255,255,.05)}
@@ -450,9 +456,58 @@ function injectCSS(){
     .st-bar .st-btn span.lbl{display:none}
   }
   @media (max-width:560px){
-    .st-panel{width:calc(100vw - 24px);height:38vh;bottom:auto;top:60px}
-    .st-right{display:none}
+    .st-panel{width:min(86vw,320px);height:auto;bottom:auto;top:60px;max-height:44vh}
+    .st-home .g{margin:0}
+    .st-home span:not(.g){display:none}
     .st-time{flex-wrap:wrap;max-width:calc(100vw - 24px);justify-content:center}
+  }
+
+  /* ---- Universal card dismissal + dynamic, device-aware layout ---- */
+  /* Every side panel slides fully off-screen and fades when dismissed — the
+     motion reads calm and intentional (Apple-style), never a hard pop. */
+  .st-panel{transition:transform .32s cubic-bezier(.22,.61,.36,1),opacity .24s ease}
+  .st-left.st-hidden{transform:translateX(calc(-100% - 16px));opacity:0;pointer-events:none}
+  .st-right.st-hidden{transform:translateX(calc(100% + 16px));opacity:0;pointer-events:none}
+  /* Slim edge tabs bring a hidden panel back without crowding the toolbar. */
+  .st-tab{position:absolute;top:50%;transform:translateY(-50%);z-index:5;display:none;
+    align-items:center;justify-content:center;writing-mode:vertical-rl;text-orientation:mixed;
+    padding:15px 7px;font-size:11px;font-weight:700;letter-spacing:.07em;color:#c6cde0;
+    background:rgba(12,14,24,.82);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+    border:1px solid rgba(255,255,255,.1);cursor:pointer;
+    transition:background .15s,border-color .15s,color .15s}
+  .st-tab:hover{background:rgba(124,92,255,.2);border-color:rgba(124,92,255,.5);color:#fff}
+  .st-tab:focus-visible{outline:2px solid #7c5cff;outline-offset:2px}
+  .st-tab.on{display:inline-flex}
+  #stTabLeft{left:0;border-left:0;border-radius:0 13px 13px 0}
+  #stTabRight{right:0;border-right:0;border-radius:13px 0 0 13px}
+  /* Immersive view — one control clears every overlay for a pure, clean sky. */
+  #studioRoot.immersive .st-panel,#studioRoot.immersive .st-time,#studioRoot.immersive .st-hint,
+  #studioRoot.immersive .st-badge,#studioRoot.immersive .st-cine,#studioRoot.immersive .st-cine-pl,
+  #studioRoot.immersive .st-nova,#studioRoot.immersive .dn-hud,#studioRoot.immersive .st-tab,
+  #studioRoot.immersive .dn-panel{opacity:0;pointer-events:none;transition:opacity .28s ease}
+  #studioRoot.immersive .st-bar{transform:translateY(-100%);
+    transition:transform .34s cubic-bezier(.22,.61,.36,1)}
+  .st-restore{position:absolute;top:calc(12px + env(safe-area-inset-top,0px));left:50%;
+    transform:translateX(-50%);z-index:10;display:none;align-items:center;gap:7px;height:36px;
+    padding:0 15px;border-radius:999px;border:1px solid rgba(255,255,255,.16);
+    background:rgba(12,14,24,.8);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);
+    color:#e8ecf6;font-size:12.5px;font-weight:700;cursor:pointer;box-shadow:0 8px 26px rgba(0,0,0,.45)}
+  #studioRoot.immersive .st-restore{display:inline-flex}
+  .st-restore:hover{background:rgba(124,92,255,.24);border-color:rgba(124,92,255,.55)}
+  .st-btn#stImmersive.on{background:linear-gradient(180deg,#7c5cff,#5a3fd6);border-color:transparent;color:#fff}
+  /* Notch / home-indicator safe areas so nothing hides behind device cutouts. */
+  .st-bar{padding-left:max(12px,env(safe-area-inset-left));
+    padding-right:max(12px,env(safe-area-inset-right));padding-top:env(safe-area-inset-top,0px);
+    min-height:52px;height:auto}
+  .st-time{bottom:max(12px,env(safe-area-inset-bottom,0px))}
+  /* Touch devices: enlarge every hit target to a comfortable ≥40px (WCAG 2.2). */
+  @media (pointer:coarse){
+    .st-btn{height:40px}
+    .st-seg .st-btn{height:38px}
+    .st-cine button,.st-nova button{height:38px;min-width:40px}
+    .st-panel h4 .st-x,.dn-x{width:32px;height:32px;font-size:15px}
+    .st-cine-pl .pl-row .pl-mv{width:32px;height:32px}
+    .st-tab{padding:20px 10px;font-size:12px}
   }
 
   /* ---- Deep-nav: non-modal floating panels (Apple-esque) ---- */
@@ -564,6 +619,7 @@ function buildDOM(){
       <select class="st-btn ghost" id="stEvent" title="Jump to a real or predicted event" style="max-width:230px"></select>
       <button class="st-btn ghost" id="stSave" title="Save scene to this browser">💾 <span class="lbl">Save</span></button>
       <button class="st-btn ghost" id="stExport" title="Export scene as a file">⇩ <span class="lbl">Export</span></button>
+      <button class="st-btn ghost" id="stImmersive" title="Immersive view — hide every panel and control for a clean sky. Press again, or tap “Show controls”, to bring them back." aria-pressed="false">⛶ <span class="lbl">Immersive</span></button>
       <div class="st-seg" role="group" aria-label="Render style" style="margin-left:2px">
         <button class="st-btn" id="stView2d" title="Back to the 2D physics sandbox">◫ <span class="lbl">2D</span></button>
         <button class="st-btn on" id="stView3d" title="3D cinematic studio" aria-pressed="true">◈ <span class="lbl">3D</span></button>
@@ -571,14 +627,18 @@ function buildDOM(){
     </div>
 
     <aside class="st-panel st-left">
-      <h4>Scene</h4>
+      <h4><span>Scene</span><button class="st-x" id="stCloseLeft" type="button" title="Hide the Scene panel" aria-label="Hide the Scene panel">✕</button></h4>
       <div class="st-scroll" id="stObjList"></div>
     </aside>
 
     <aside class="st-panel st-right">
-      <h4>Inspector</h4>
+      <h4><span>Inspector</span><button class="st-x" id="stCloseRight" type="button" title="Hide the Inspector panel" aria-label="Hide the Inspector panel">✕</button></h4>
       <div class="st-scroll" id="stInspector"><div class="st-note">Select a body or imported object to inspect and transform it.</div></div>
     </aside>
+
+    <button class="st-tab" id="stTabLeft" type="button" title="Show the Scene panel" aria-label="Show the Scene panel">Scene</button>
+    <button class="st-tab" id="stTabRight" type="button" title="Show the Inspector panel" aria-label="Show the Inspector panel">Inspector</button>
+    <button class="st-restore" id="stRestore" type="button" title="Show the controls again">◱ Show controls</button>
 
     <div class="st-badge" id="stBadge"></div>
     <div class="dn-hud" id="dnHud"></div>
@@ -666,7 +726,7 @@ function buildDOM(){
     </div>
 
     <div class="st-hint">
-      Explore: drag orbit · scroll zoom · right-drag pan · <b>1/2/3</b> front·top·side view · <b>G</b> slide · <b>W/E/R</b> move·rotate·scale · <b>F</b> focus · <b>Del</b> remove · gamepad supported
+      Explore: drag orbit · scroll / pinch zoom · right-drag or two-finger pan · <b>1/2/3</b> front·top·side view · <b>G</b> slide · <b>H</b> immersive · <b>W/E/R</b> move·rotate·scale · <b>F</b> focus · <b>Del</b> remove · gamepad supported
     </div>
 
     <div class="st-drop">Drop a model, image, video, or audio to place it in 3D</div>
@@ -747,6 +807,13 @@ function buildDOM(){
   root.querySelector('#dnFlights').addEventListener('click', ()=>dnPanel('flights').toggle());
   root.querySelector('#stSave').addEventListener('click', saveScene);
   root.querySelector('#stExport').addEventListener('click', exportScene);
+  // Universal card dismissal + immersive view
+  root.querySelector('#stCloseLeft').addEventListener('click', ()=>panelShow('left', false));
+  root.querySelector('#stCloseRight').addEventListener('click', ()=>panelShow('right', false));
+  root.querySelector('#stTabLeft').addEventListener('click', ()=>panelShow('left', true));
+  root.querySelector('#stTabRight').addEventListener('click', ()=>panelShow('right', true));
+  root.querySelector('#stImmersive').addEventListener('click', ()=>toggleImmersive());
+  root.querySelector('#stRestore').addEventListener('click', ()=>toggleImmersive(false));
   playBtn.addEventListener('click', ()=>{ setRealtime(false); playing=!playing; playBtn.textContent = playing?'⏸':'▶'; });
   dateInput.addEventListener('change', ()=>{ setRealtime(false); simDate = new Date(dateInput.value+'T00:00:00Z'); updatePlanets(); });
   const SPD=[0,1,2,5,15,45,120,365,1460];
@@ -763,6 +830,42 @@ function buildDOM(){
 function toast(msg){
   const t = root.querySelector('#stToast'); t.textContent = msg; t.classList.add('show');
   clearTimeout(t._t); t._t = setTimeout(()=>t.classList.remove('show'), 2200);
+}
+
+/* ---- Universal card dismissal + dynamic layout ----------------------------
+   Every side panel can be hidden (its header ✕) and reopened (a slim edge tab),
+   and one Immersive control clears all chrome. Choices persist per device so a
+   small screen stays calm and a large screen stays rich. */
+const PANEL_KEY = { left:'ewi-cosmos-panel-left', right:'ewi-cosmos-panel-right' };
+function panelSel(side){ return side==='left' ? '.st-left' : '.st-right'; }
+function panelShow(side, show, persist){
+  const panel = root.querySelector(panelSel(side));
+  const tab   = root.querySelector(side==='left' ? '#stTabLeft' : '#stTabRight');
+  if (!panel) return;
+  panel.classList.toggle('st-hidden', !show);
+  if (tab) tab.classList.toggle('on', !show);
+  if (persist !== false){ try{ localStorage.setItem(PANEL_KEY[side], show ? '1' : '0'); }catch(_){} }
+}
+function panelToggle(side){
+  const panel = root.querySelector(panelSel(side));
+  if (panel) panelShow(side, panel.classList.contains('st-hidden'));
+}
+function applyPanelPrefs(){
+  const smallDefault = window.matchMedia('(max-width:820px)').matches; // phones/tablets start clean
+  ['left','right'].forEach(side=>{
+    let saved = null; try{ saved = localStorage.getItem(PANEL_KEY[side]); }catch(_){}
+    const show = saved === null ? !smallDefault : saved === '1';
+    panelShow(side, show, false);
+  });
+}
+function toggleImmersive(force){
+  if (!root) return;
+  const on = (force === undefined) ? !root.classList.contains('immersive') : !!force;
+  root.classList.toggle('immersive', on);
+  const b = root.querySelector('#stImmersive');
+  if (b){ b.classList.toggle('on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); }
+  if (on) toast('Immersive view · tap “Show controls” to restore');
+  else    toast('Controls restored');
 }
 
 /* ---------------------------------------------------------------------------
@@ -843,6 +946,13 @@ function buildScene(){
   renderer.domElement.addEventListener('pointerdown', markInput);
   renderer.domElement.addEventListener('wheel', markInput, { passive:true });
   renderer.domElement.addEventListener('wheel', onWheelDolly, { passive:false });
+  // Mobile: two-finger pinch → smooth cursor-anchored zoom (mirrors the wheel
+  // dolly). OrbitControls keeps one-finger orbit + two-finger pan; pinch adds the
+  // missing zoom axis so touch feels like a native map/globe. See onTouchPinch*.
+  renderer.domElement.addEventListener('touchstart', onTouchPinchStart, { passive:true });
+  renderer.domElement.addEventListener('touchmove',  onTouchPinchMove,  { passive:false });
+  renderer.domElement.addEventListener('touchend',   onTouchPinchEnd,   { passive:true });
+  renderer.domElement.addEventListener('touchcancel',onTouchPinchEnd,   { passive:true });
   // Resilience: recover gracefully from a lost/restored WebGL context.
   renderer.domElement.addEventListener('webglcontextlost', e=>{ e.preventDefault(); playing=false; cancelAnimationFrame(raf); raf=0; toast('Graphics context lost — recovering…'); });
   renderer.domElement.addEventListener('webglcontextrestored', ()=>{ if (open && !raf){ try{ clock.start(); }catch(err){} animate(); } });
@@ -1380,6 +1490,53 @@ const _dollyOff = new THREE.Vector3();
 const _dollyHit = new THREE.Vector3();
 const _dollyPlane = new THREE.Plane();
 const _dollyNDC = new THREE.Vector2();
+
+// Set zoom3D.anchor to the world point on the focal plane beneath a screen point
+// (cx,cy in client px). Shared by wheel + pinch so both pin the point they zoom to.
+function _dollySetAnchor(cx, cy){
+  const el = renderer.domElement, rect = el.getBoundingClientRect();
+  if (!rect.width || !rect.height){ zoom3D.hasAnchor = false; return; }
+  _dollyNDC.set(((cx-rect.left)/rect.width)*2-1, -(((cy-rect.top)/rect.height)*2-1));
+  raycaster.setFromCamera(_dollyNDC, camera);
+  camera.getWorldDirection(_dollyFwd);
+  _dollyPlane.setFromNormalAndCoplanarPoint(_dollyFwd, orbit.target);
+  if (raycaster.ray.intersectPlane(_dollyPlane, _dollyHit)){ zoom3D.anchor.copy(_dollyHit); zoom3D.hasAnchor = true; }
+  else zoom3D.hasAnchor = false;
+}
+
+// ---- Touch pinch-zoom (mobile / trackpad-less tablets) ----
+// OrbitControls (native zoom disabled) gives one-finger orbit + two-finger pan
+// but NO pinch zoom. This layer reads the two-finger spread and drives the same
+// smooth, anchored zoom3D glide as the wheel — the missing mobile zoom axis.
+const _pinch = { active:false, dist:0 };
+function _touchSpread(a, b){ return Math.hypot(a.clientX-b.clientX, a.clientY-b.clientY); }
+function onTouchPinchStart(e){
+  if (e.touches.length === 2){
+    _pinch.active = true;
+    _pinch.dist = _touchSpread(e.touches[0], e.touches[1]);
+    cineLastInput = performance.now();
+  }
+}
+function onTouchPinchMove(e){
+  if (!_pinch.active || e.touches.length !== 2) return;
+  e.preventDefault();                                // block the browser's page pinch
+  const t0 = e.touches[0], t1 = e.touches[1];
+  const d = _touchSpread(t0, t1);
+  if (_pinch.dist > 0 && d > 0){
+    _dollySetAnchor((t0.clientX+t1.clientX)/2, (t0.clientY+t1.clientY)/2);
+    // fingers apart (d > prev) → ratio < 1 → radius shrinks → zoom IN.
+    const ratio = Math.max(0.5, Math.min(2, _pinch.dist / d));
+    const curR = camera.position.distanceTo(orbit.target);
+    const base = zoom3D.active ? zoom3D.targetR : curR;
+    zoom3D.targetR = Math.max(orbit.minDistance, Math.min(orbit.maxDistance, base * ratio));
+    zoom3D.active = true;
+    cineLastInput = performance.now();
+  }
+  _pinch.dist = d;
+}
+function onTouchPinchEnd(e){
+  if (e.touches.length < 2){ _pinch.active = false; _pinch.dist = 0; }
+}
 
 function onWheelDolly(e){
   e.preventDefault();
@@ -3189,6 +3346,11 @@ function loadSavedScene(){
    ------------------------------------------------------------------------- */
 function onKey(e){
   if (!open) return;
+  // Don't hijack typing in the dwell field, event picker, or any text input.
+  const ae = document.activeElement;
+  if (ae && (ae.tagName==='INPUT' || ae.tagName==='SELECT' || ae.tagName==='TEXTAREA' || ae.isContentEditable)){
+    if (e.key!=='Escape') return;
+  }
   const k = e.key.toLowerCase();
   if (k==='escape'){ transform.detach(); selected=null; return; }
   if (k==='w'){ transform.setMode('translate'); }
@@ -3199,6 +3361,7 @@ function onKey(e){
   else if (k===' '){ playing=!playing; playBtn.textContent=playing?'⏸':'▶'; e.preventDefault(); }
   else if (k==='c'){ setCamMode(camMode==='cinematic'?'explore':'cinematic'); }
   else if (k==='g'){ setPanMode(!panMode); }
+  else if (k==='h'){ toggleImmersive(); }
   else if (k==='1'){ alignViewPlane('xy'); }
   else if (k==='2'){ alignViewPlane('xz'); }
   else if (k==='3'){ alignViewPlane('yz'); }
@@ -3275,6 +3438,7 @@ function openStudio(){
   if (stHome && homeSrc){ const h = homeSrc.getAttribute('href') || homeSrc.href; if (h) stHome.href = h; }
   syncViewSwitch(true);
   onResize();
+  applyPanelPrefs();                            // device-aware: phones/tablets start uncluttered
   clock.start();
   // resume audio contexts after the user gesture that opened the studio
   if (listener.context.state==='suspended') listener.context.resume().catch(()=>{});
@@ -4063,4 +4227,11 @@ window.__cosmosStudio = { open:openStudio, close, heliocentric, auToScene, PLANE
   get cinePlaylist(){ return (cineEnsurePlaylist()||[]).map(it=>({id:it.id,on:it.on})); },
   cineEnabledSeq:()=>cineEnabledSeq(), cinePlMove:(i,d)=>cinePlMove(i,d), cineAuto:()=>cineAuto(),
   cineTick:(dt)=>{ try{ tickCinematic(dt||0.016); }catch(_){} }, get cineFocusKey(){ return cineFocusKey; },
+  // Layout / immersive / mobile-zoom hooks
+  panelShow:(side,show)=>panelShow(side,show), panelToggle:(side)=>panelToggle(side),
+  get panelLeftHidden(){ return !!root && root.querySelector('.st-left').classList.contains('st-hidden'); },
+  get panelRightHidden(){ return !!root && root.querySelector('.st-right').classList.contains('st-hidden'); },
+  immersive:(f)=>toggleImmersive(f), get immersiveOn(){ return !!root && root.classList.contains('immersive'); },
+  pinchZoom:(ratio)=>{ const curR=camera.position.distanceTo(orbit.target); const base=zoom3D.active?zoom3D.targetR:curR;
+    zoom3D.targetR=Math.max(orbit.minDistance,Math.min(orbit.maxDistance, base*Math.max(0.5,Math.min(2,ratio||1)))); zoom3D.active=true; },
   get dnFlightActive(){ return !!dnFlightSim; }, get dnWorldSlow(){ return dnWorldSlow; }, get airportCount(){ return Object.keys(AIRPORTS).length; } };
