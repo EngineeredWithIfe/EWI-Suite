@@ -269,6 +269,12 @@ let bhSelRing = null;                          // reusable camera-facing selecti
 const _bhPick = new THREE.Vector2();
 const _bhDragN = new THREE.Vector3(), _bhDragHit = new THREE.Vector3(), _bhDragOff = new THREE.Vector3();
 const _bhDragPlane = new THREE.Plane();
+// A star (the Sun) bleeds energy to a nearby hole — dimming, cooling, shrinking, dying.
+let bhSunDrain = 0;                             // 0 = healthy, 1 = fully devoured
+let bhSunFed = false;                           // dead-star mass already fed to the hole
+let _bhSunShred = 0;                            // throttle for the plasma stream Sun → hole
+const _bhSunColDead = new THREE.Color(0x140208);
+const _bhSunCol = new THREE.Color();
 // Remember the last render view (2D sandbox vs 3D studio) on this device, so a
 // refresh / reopened tab restores exactly where the user left off.
 const VIEW_KEY = 'ewi-cosmos-view';            // localStorage: '2d' | '3d'
@@ -1907,7 +1913,7 @@ function animate(){
     if (asteroidBelt && !bhSimOn) asteroidBelt.rotation.y += dt*0.02;
     if (meteorSys) updateMeteors(dt);
     // Black-hole gravitational dynamics + visuals (independent of camera mode)
-    bhIntegrate(dt); bhRenderTick(dt); bhBurstTick(dt);
+    bhIntegrate(dt); bhRenderTick(dt); bhBurstTick(dt); bhStellarTick(dt);
     // NAVLINQ midpoint tracks the bodies as they move (throttled; updates even when paused)
     if (navMode && navSel.size>=2){ _navAccum+=dt; if(_navAccum>0.1){ _navAccum=0; updateNav(); } }
 
@@ -3487,7 +3493,10 @@ function bhSimStart(){
     simDate: new Date(simDate.getTime()), playing,
     planetVis: PLANETS.map(p=>({ key:p.key, vis: planetMeshes[p.key]?planetMeshes[p.key].group.visible:true, sc: planetMeshes[p.key]?planetMeshes[p.key].group.scale.x:1 })),
     importedPos: imported.map(im=>({ id:im.id, p:im.object3d.position.clone(), vis:im.object3d.visible, sc:im.object3d.scale.x })),
-    beltVisible: asteroidBelt?asteroidBelt.visible:true
+    beltVisible: asteroidBelt?asteroidBelt.visible:true,
+    sun: sun ? { scale:sun.scale.x, vis:sun.visible, col:sun.material.color.getHex(),
+      lightI:sunLight?sunLight.intensity:3.2, lightC:sunLight?sunLight.color.getHex():0xfff4d8,
+      glowO:sunGlow?sunGlow.material.opacity:0.14, glowC:sunGlow?sunGlow.material.color.getHex():0xffb020 } : null
   };
   bhBodies = [];
   for (const p of PLANETS){ const rec = planetMeshes[p.key]; if (!rec || !rec.group.visible) continue;
@@ -3502,6 +3511,7 @@ function bhSimStart(){
     bhBeltAlive = new Uint8Array(arr.length/3).fill(1);
   }
   bhSeedVelocities();
+  bhSunDrain = 0; bhSunFed = false; _bhSunShred = 0;   // reset the Sun's fate for this run
   playing = false; if (playBtn) playBtn.textContent='▶';
   try{ setRealtime(false); }catch(_){}
   bhSimOn = true;
@@ -3635,9 +3645,14 @@ function bhSimStop(restore){
     for (const pv of _bhSaved.planetVis){ const rec=planetMeshes[pv.key]; if(rec){ rec.group.visible=pv.vis; rec.group.scale.setScalar(pv.sc==null?1:pv.sc); if(rec.orbitLine) rec.orbitLine.visible=pv.vis; } }
     for (const ip of _bhSaved.importedPos){ const im=imported.find(x=>x.id===ip.id); if(im){ im.object3d.position.copy(ip.p); im.object3d.visible=ip.vis; im.object3d.scale.setScalar(ip.sc==null?1:ip.sc); } }
     if (asteroidBelt && bhBeltBase){ const arr=asteroidBelt.geometry.attributes.position.array; arr.set(bhBeltBase); asteroidBelt.geometry.attributes.position.needsUpdate=true; asteroidBelt.visible=_bhSaved.beltVisible; }
+    const sb=_bhSaved.sun;
+    if (sb && sun){ sun.visible=(sb.vis!==false); sun.scale.setScalar(sb.scale==null?1:sb.scale); sun.material.color.setHex(sb.col);
+      if (sunLight){ sunLight.intensity=sb.lightI; sunLight.color.setHex(sb.lightC); }
+      if (sunGlow){ sunGlow.material.opacity=sb.glowO; sunGlow.material.color.setHex(sb.glowC); } }
     simDate = _bhSaved.simDate; try{ updatePlanets(); }catch(_){}
   }
   bhBodies = []; bhBeltVel=null; bhBeltAlive=null; bhBeltBase=null; _bhSaved=null;
+  bhSunDrain=0; bhSunFed=false; _bhSunShred=0;
   for (let i=bhBurstList.length-1;i>=0;i--){ bhBurstList[i].cleanup(); bhBurstList.splice(i,1); }
 }
 
@@ -3771,6 +3786,7 @@ function bhFormBuild(){
     `<label class="bhf-row"><span>Mass — log₁₀(M☉)</span><input id="bhfMass" type="range" min="0" max="10" step="0.05" value="${Math.log10(d.massMsun).toFixed(2)}" aria-label="Mass, log base 10 of solar masses"></label>`+
     `<div class="bhf-read" id="bhfMassRead">${d.massMsun.toLocaleString(undefined,{maximumSignificantDigits:4})} M☉ · r<sub>s</sub> ≈ ${rsKm}</div>`+
     `<label class="bhf-row"><span>Size (scene)</span><input id="bhfSize" type="range" min="0.4" max="16" step="0.1" value="${d.rs.toFixed(1)}" aria-label="On-screen horizon size in scene units"></label>`+
+    `<div class="bhf-note">Drag the hole directly in the 3D view to place it — X / Y / Z update as you move, so there's no need to type them.</div>`+
     `<div class="bhf-xyz">`+
       `<label><span>X</span><input id="bhfX" type="number" step="0.5" value="${d.pos.x.toFixed(1)}" aria-label="Position X"></label>`+
       `<label><span>Y</span><input id="bhfY" type="number" step="0.5" value="${d.pos.y.toFixed(1)}" aria-label="Position Y"></label>`+
@@ -3848,6 +3864,13 @@ function selectBlackHole(bh){
   highlightList(bh.id);
   bhInspector(bh);
 }
+// Toggle-off: clicking the already-selected hole in the Scene list clears the selection
+// (Finder-like), leaving every hole independently selectable.
+function bhDeselect(){
+  selected = null;
+  highlightList('__none__');                    // clears the .sel highlight from every row
+  if (inspectorEl) inspectorEl.innerHTML = '<div class="st-note">Select a body or imported object to inspect and transform it.</div>';
+}
 function focusBlackHole(bh){
   if (!bh.group) return;
   const d = bh.rs*14 + 16;
@@ -3875,7 +3898,8 @@ function bhInspector(bh){
    space, press Del to remove it. Runs in the capture phase, ahead of
    OrbitControls, so grabbing a hole never also spins the camera. ---- */
 function bhGrabPointer(e){
-  if (!open || !blackHoles.length) return;
+  if (!open) return;
+  if (!blackHoles.length && !bhDraft) return;                       // holes (or a live draft) must exist
   if (e.target !== renderer.domElement || e.button !== 0) return;   // primary click on the canvas only
   if (novaOn || ecOn) return;                                       // never interrupt a scripted cinematic
   if (transform && transform.dragging) return;
@@ -3883,21 +3907,23 @@ function bhGrabPointer(e){
   _bhPick.x = ((e.clientX - r.left)/r.width)*2 - 1;
   _bhPick.y = -((e.clientY - r.top)/r.height)*2 + 1;
   raycaster.setFromCamera(_bhPick, camera);
+  const holes = bhDraft ? blackHoles.concat([bhDraft]) : blackHoles;
   const meshes = [];
-  for (const bh of blackHoles){ if (bh.horizon) meshes.push(bh.horizon); if (bh.disk) meshes.push(bh.disk); }
+  for (const bh of holes){ if (bh.horizon) meshes.push(bh.horizon); if (bh.disk) meshes.push(bh.disk); }
   const hit = raycaster.intersectObjects(meshes, false)[0];
   if (!hit) return;
   let bh = null;
-  for (const h of blackHoles){ if (h.horizon===hit.object || h.disk===hit.object){ bh=h; break; } }
+  for (const h of holes){ if (h.horizon===hit.object || h.disk===hit.object){ bh=h; break; } }
   if (!bh) return;
-  selectBlackHole(bh);
+  const isDraft = (bh===bhDraft);
+  if (!isDraft) selectBlackHole(bh);            // dragging the draft keeps its configure form open
   orbit.enabled = false;
   cineLastInput = performance.now();            // pause any auto-direction while dragging
   camera.getWorldDirection(_bhDragN).normalize();
   _bhDragPlane.setFromNormalAndCoplanarPoint(_bhDragN, bh.pos);   // a camera-facing plane through the hole
   if (raycaster.ray.intersectPlane(_bhDragPlane, _bhDragHit)) _bhDragOff.copy(bh.pos).sub(_bhDragHit);
   else _bhDragOff.set(0,0,0);
-  bhDrag = { bh, moved:false, uiN:0 };
+  bhDrag = { bh, isDraft, moved:false, uiN:0 };
   renderer.domElement.style.cursor = 'grabbing';
   window.addEventListener('pointermove', bhDragMove, true);
   window.addEventListener('pointerup', bhDragEnd, true);
@@ -3914,7 +3940,15 @@ function bhDragMove(e){
     bh.pos.copy(_bhDragHit).add(_bhDragOff);
     if (bh.group) bh.group.position.copy(bh.pos);
     bhDrag.moved = true;
-    if ((++bhDrag.uiN % 3)===0 && selected && selected.type==='bh' && selected.bh===bh) bhInspector(bh);
+    if (bhDrag.isDraft){
+      // live-update the configure form's X / Y / Z so lock-in keeps the dragged spot
+      const card = root.querySelector('#stBhForm');
+      if (card){ const q=s=>card.querySelector(s);
+        if (q('#bhfX')) q('#bhfX').value = bh.pos.x.toFixed(1);
+        if (q('#bhfY')) q('#bhfY').value = bh.pos.y.toFixed(1);
+        if (q('#bhfZ')) q('#bhfZ').value = bh.pos.z.toFixed(1);
+      }
+    } else if ((++bhDrag.uiN % 3)===0 && selected && selected.type==='bh' && selected.bh===bh){ bhInspector(bh); }
   }
   e.stopImmediatePropagation(); e.preventDefault();
 }
@@ -3965,6 +3999,37 @@ function bhShred(pos, bh, f){
   const pts = new THREE.Points(geo, mat); pts.renderOrder=5; scene.add(pts);
   const cleanup = ()=>{ scene.remove(pts); geo.dispose(); mat.dispose(); };
   bhBurstList.push({ life:0, dur:0.45, geo, mat, vv, N, cleanup });
+}
+// Stellar death: a star within a hole's reach bleeds energy to it — its light fades,
+// its corona cools and reddens, it collapses in size and finally goes dark, its mass
+// feeding the hole. Faithful in spirit to tidal disruption / accretion of a star.
+function bhStellarTick(dt){
+  if (!bhSimOn || novaOn || !sun) return;
+  let near=null, nd=Infinity;
+  for (const h of blackHoles){ const d=h.pos.distanceTo(sun.position); if(d<nd){ nd=d; near=h; } }
+  if (near){
+    const reach = near.rs*8 + 24;                 // envelope within which the star loses energy
+    if (nd < reach){
+      const prox = _nvClamp((reach-nd)/reach, 0, 1);   // 0 at the edge → 1 at contact
+      bhSunDrain = _nvClamp(bhSunDrain + dt*(0.04 + prox*prox*0.5), 0, 1);   // dies faster the closer the hole
+      _bhSunShred += dt;                                // a thin stream of plasma peels off toward the hole
+      if (bhSunDrain>0.02 && bhSunDrain<1 && _bhSunShred>0.05){ _bhSunShred=0; bhShred(sun.position, near, 0.5+0.5*prox); }
+    }
+  }
+  bhApplySunDrain(near);
+}
+function bhApplySunDrain(near){
+  const b = _bhSaved && _bhSaved.sun; if (!b) return;
+  const k = bhSunDrain, inv = 1-k;
+  if (sunLight) sunLight.intensity = b.lightI*inv;                        // energy / light fades
+  if (sunGlow) sunGlow.material.opacity = b.glowO*inv;                    // corona fades
+  _bhSunCol.setHex(b.col).lerp(_bhSunColDead, k);                         // cools toward a cold ember
+  if (sun){
+    sun.material.color.copy(_bhSunCol);
+    sun.scale.setScalar(Math.max(0.001, b.scale*(1-0.985*k)));           // collapses as it is devoured
+    sun.visible = k < 1;
+  }
+  if (k>=1 && !bhSunFed && near){ bhGrow(near, 1.0); bhSunFed=true; toast('The Sun has died — its mass now feeds '+near.name); }
 }
 
 /* ---------------------------------------------------------------------------
@@ -4193,7 +4258,7 @@ function refreshObjList(){
       const id = el.dataset.id;
       const bh = blackHoles.find(x=>x.id===id);
       const im = imported.find(x=>x.id===id);
-      if (bh){ cineHold(); focusBlackHole(bh); selectBlackHole(bh); return; }
+      if (bh){ if (selected && selected.type==='bh' && selected.bh===bh){ bhDeselect(); return; } cineHold(); focusBlackHole(bh); selectBlackHole(bh); return; }
       if (id==='moon'){ if (navMode){ navToggleBody('moon'); return; } cineHold(); focusMoon(); selectPlanet('moon'); return; }
       if (im){ cineHold(); focusObject(im.object3d); selectImported(im); }
       else if (id==='sun'){ if(navMode) return; cineHold(); selectPlanet('Sun'); focusKey('mercury'); }
