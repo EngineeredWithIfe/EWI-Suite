@@ -263,6 +263,12 @@ const _bhReduce = () => !!(window.matchMedia && window.matchMedia('(prefers-redu
 // Scratch vectors — reused every frame to avoid per-frame allocation (resilience).
 const _bhA = new THREE.Vector3(), _bhB = new THREE.Vector3(), _bhAcc = new THREE.Vector3(),
       _bhTan = new THREE.Vector3(), _bhTmp = new THREE.Vector3(), _bhUp = new THREE.Vector3(0,1,0);
+// Selecting / dragging a black hole directly in the 3D scene.
+let bhDrag = null;                             // active drag session: { bh, moved, uiN }
+let bhSelRing = null;                          // reusable camera-facing selection halo
+const _bhPick = new THREE.Vector2();
+const _bhDragN = new THREE.Vector3(), _bhDragHit = new THREE.Vector3(), _bhDragOff = new THREE.Vector3();
+const _bhDragPlane = new THREE.Plane();
 // Remember the last render view (2D sandbox vs 3D studio) on this device, so a
 // refresh / reopened tab restores exactly where the user left off.
 const VIEW_KEY = 'ewi-cosmos-view';            // localStorage: '2d' | '3d'
@@ -1164,7 +1170,8 @@ function buildScene(){
   refreshObjList();
   window.addEventListener('resize', onResize);
   renderer.domElement.addEventListener('pointerdown', onPointerDown);
-  // Cinematic yields to the user: any manual steering pauses auto-direction.
+  // Grab a black hole directly (capture phase, ahead of OrbitControls) to drag it through space.
+  window.addEventListener('pointerdown', bhGrabPointer, true);
   const markInput = ()=>{ cineLastInput = performance.now(); };
   renderer.domElement.addEventListener('pointerdown', markInput);
   renderer.domElement.addEventListener('wheel', markInput, { passive:true });
@@ -3442,6 +3449,7 @@ function bhDispose(bh){
 // glow, keep the disk light lit while the sim runs. Cheap; runs whenever holes
 // exist. Honors reduced-motion.
 function bhRenderTick(dt){
+  bhSyncSelRing();                              // keep the selection halo on the chosen hole
   const holes = bhDraft ? blackHoles.concat([bhDraft]) : blackHoles;
   if (!holes.length) return;
   const calm = _bhReduce() ? 0.25 : 1;
@@ -3468,14 +3476,17 @@ function bhRenderTick(dt){
 }
 
 /* ---- Gravity integrator (symplectic Euler + Plummer softening) ---- */
-function bhSnapshotBody(kind, ref, pos, mass){ return { kind, ref, pos, vel:new THREE.Vector3(), mass, alive:true }; }
+function bhSnapshotBody(kind, ref, pos, mass){
+  const o = kind==='planet' ? ref.group : (kind==='imported' ? ref.object3d : null);
+  return { kind, ref, pos, vel:new THREE.Vector3(), mass, alive:true, baseScale:(o?o.scale.x:1), shred:0 };
+}
 function bhSimStart(){
   if (bhSimOn || !blackHoles.length) return;
   // snapshot everything we perturb, so removal restores the Solar System exactly
   _bhSaved = {
     simDate: new Date(simDate.getTime()), playing,
-    planetVis: PLANETS.map(p=>({ key:p.key, vis: planetMeshes[p.key]?planetMeshes[p.key].group.visible:true })),
-    importedPos: imported.map(im=>({ id:im.id, p:im.object3d.position.clone(), vis:im.object3d.visible })),
+    planetVis: PLANETS.map(p=>({ key:p.key, vis: planetMeshes[p.key]?planetMeshes[p.key].group.visible:true, sc: planetMeshes[p.key]?planetMeshes[p.key].group.scale.x:1 })),
+    importedPos: imported.map(im=>({ id:im.id, p:im.object3d.position.clone(), vis:im.object3d.visible, sc:im.object3d.scale.x })),
     beltVisible: asteroidBelt?asteroidBelt.visible:true
   };
   bhBodies = [];
@@ -3552,6 +3563,19 @@ function bhIntegrate(dt){
       bhAccel(b.pos, _bhAcc);
       b.vel.addScaledVector(_bhAcc, h);
       b.pos.addScaledVector(b.vel, h);
+      // Progressive tidal destruction — the body is torn apart (shrinks) and sheds a
+      // debris stream toward the hole as it crosses into the tidal zone, then is
+      // annihilated at the horizon. Faithful to spaghettification, cheap to draw.
+      { let near=null, nd=Infinity;
+        for (const hb of blackHoles){ const d=b.pos.distanceTo(hb.pos); if(d<nd){ nd=d; near=hb; } }
+        if (near){ const tidal=near.rs*4;
+          if (nd<tidal){ const f=_nvClamp((tidal-nd)/(tidal-near.captureR),0,1);
+            const o = b.kind==='planet'? b.ref.group : (b.kind==='imported'? b.ref.object3d : null);
+            if (o) o.scale.setScalar(Math.max(0.03, b.baseScale*(1-0.92*f)));
+            b.shred += h; if (b.shred>0.03){ b.shred=0; bhShred(b.pos, near, f); }
+          }
+        }
+      }
       const hole = bhCapture(b.pos);
       if (hole){
         b.alive=false;
@@ -3608,8 +3632,8 @@ function bhSimStop(restore){
   if (!bhSimOn) return;
   bhSimOn = false;
   if (restore && _bhSaved){
-    for (const pv of _bhSaved.planetVis){ const rec=planetMeshes[pv.key]; if(rec){ rec.group.visible=pv.vis; if(rec.orbitLine) rec.orbitLine.visible=pv.vis; } }
-    for (const ip of _bhSaved.importedPos){ const im=imported.find(x=>x.id===ip.id); if(im){ im.object3d.position.copy(ip.p); im.object3d.visible=ip.vis; } }
+    for (const pv of _bhSaved.planetVis){ const rec=planetMeshes[pv.key]; if(rec){ rec.group.visible=pv.vis; rec.group.scale.setScalar(pv.sc==null?1:pv.sc); if(rec.orbitLine) rec.orbitLine.visible=pv.vis; } }
+    for (const ip of _bhSaved.importedPos){ const im=imported.find(x=>x.id===ip.id); if(im){ im.object3d.position.copy(ip.p); im.object3d.visible=ip.vis; im.object3d.scale.setScalar(ip.sc==null?1:ip.sc); } }
     if (asteroidBelt && bhBeltBase){ const arr=asteroidBelt.geometry.attributes.position.array; arr.set(bhBeltBase); asteroidBelt.geometry.attributes.position.needsUpdate=true; asteroidBelt.visible=_bhSaved.beltVisible; }
     simDate = _bhSaved.simDate; try{ updatePlanets(); }catch(_){}
   }
@@ -3845,6 +3869,102 @@ function bhInspector(bh){
     `</div>`;
   const pl = inspectorEl.querySelector('#stBhInspPlay'); if (pl) pl.addEventListener('click', ()=>bhEnterCinema(bh));
   const dl = inspectorEl.querySelector('#stBhInspDel'); if (dl) dl.addEventListener('click', ()=>bhRemove(bh));
+}
+
+/* ---- Direct manipulation: click a hole to select it, drag to move it through
+   space, press Del to remove it. Runs in the capture phase, ahead of
+   OrbitControls, so grabbing a hole never also spins the camera. ---- */
+function bhGrabPointer(e){
+  if (!open || !blackHoles.length) return;
+  if (e.target !== renderer.domElement || e.button !== 0) return;   // primary click on the canvas only
+  if (novaOn || ecOn) return;                                       // never interrupt a scripted cinematic
+  if (transform && transform.dragging) return;
+  const r = renderer.domElement.getBoundingClientRect();
+  _bhPick.x = ((e.clientX - r.left)/r.width)*2 - 1;
+  _bhPick.y = -((e.clientY - r.top)/r.height)*2 + 1;
+  raycaster.setFromCamera(_bhPick, camera);
+  const meshes = [];
+  for (const bh of blackHoles){ if (bh.horizon) meshes.push(bh.horizon); if (bh.disk) meshes.push(bh.disk); }
+  const hit = raycaster.intersectObjects(meshes, false)[0];
+  if (!hit) return;
+  let bh = null;
+  for (const h of blackHoles){ if (h.horizon===hit.object || h.disk===hit.object){ bh=h; break; } }
+  if (!bh) return;
+  selectBlackHole(bh);
+  orbit.enabled = false;
+  cineLastInput = performance.now();            // pause any auto-direction while dragging
+  camera.getWorldDirection(_bhDragN).normalize();
+  _bhDragPlane.setFromNormalAndCoplanarPoint(_bhDragN, bh.pos);   // a camera-facing plane through the hole
+  if (raycaster.ray.intersectPlane(_bhDragPlane, _bhDragHit)) _bhDragOff.copy(bh.pos).sub(_bhDragHit);
+  else _bhDragOff.set(0,0,0);
+  bhDrag = { bh, moved:false, uiN:0 };
+  renderer.domElement.style.cursor = 'grabbing';
+  window.addEventListener('pointermove', bhDragMove, true);
+  window.addEventListener('pointerup', bhDragEnd, true);
+  e.stopImmediatePropagation(); e.preventDefault();
+}
+function bhDragMove(e){
+  if (!bhDrag) return;
+  const bh = bhDrag.bh;
+  const r = renderer.domElement.getBoundingClientRect();
+  _bhPick.x = ((e.clientX - r.left)/r.width)*2 - 1;
+  _bhPick.y = -((e.clientY - r.top)/r.height)*2 + 1;
+  raycaster.setFromCamera(_bhPick, camera);
+  if (raycaster.ray.intersectPlane(_bhDragPlane, _bhDragHit)){
+    bh.pos.copy(_bhDragHit).add(_bhDragOff);
+    if (bh.group) bh.group.position.copy(bh.pos);
+    bhDrag.moved = true;
+    if ((++bhDrag.uiN % 3)===0 && selected && selected.type==='bh' && selected.bh===bh) bhInspector(bh);
+  }
+  e.stopImmediatePropagation(); e.preventDefault();
+}
+function bhDragEnd(e){
+  window.removeEventListener('pointermove', bhDragMove, true);
+  window.removeEventListener('pointerup', bhDragEnd, true);
+  const bh = bhDrag && bhDrag.bh;
+  bhDrag = null;
+  if (orbit) orbit.enabled = true;
+  if (renderer) renderer.domElement.style.cursor = '';
+  if (bh && selected && selected.type==='bh' && selected.bh===bh) bhInspector(bh);
+  if (e) e.stopImmediatePropagation();
+}
+// A soft, camera-facing halo around the currently selected hole — clear visual
+// confirmation of what a Del press (or Remove) will delete. Honors reduced-motion.
+function bhSyncSelRing(){
+  const sel = (selected && selected.type==='bh') ? selected.bh : null;
+  if (!sel || !sel.group){ if (bhSelRing) bhSelRing.visible = false; return; }
+  if (!bhSelRing){
+    bhSelRing = new THREE.Mesh(
+      new THREE.RingGeometry(0.86, 1.0, 64),
+      new THREE.MeshBasicMaterial({ color:0x6cf0ff, transparent:true, opacity:0.9, side:THREE.DoubleSide,
+        blending:THREE.AdditiveBlending, depthWrite:false, depthTest:false }));
+    bhSelRing.renderOrder = 6; scene.add(bhSelRing);
+  }
+  bhSelRing.visible = true;
+  bhSelRing.position.copy(sel.pos);
+  const pulse = _bhReduce() ? 1 : (1 + Math.sin(performance.now()*0.004)*0.05);
+  bhSelRing.scale.setScalar(sel.rs*2.2*pulse);
+  bhSelRing.quaternion.copy(camera.quaternion);   // billboard toward the viewer
+}
+// A short-lived debris stream shed by a body as it is torn apart and drawn inward.
+function bhShred(pos, bh, f){
+  if (bhBurstList.length > 140) return;            // resilience: bound the particle budget
+  const N = _bhReduce() ? 2 : 4;
+  const geo = new THREE.BufferGeometry();
+  const pp = new Float32Array(N*3);
+  const vv = [];
+  _bhTmp.copy(bh.pos).sub(pos); const L = _bhTmp.length()||1; _bhTmp.multiplyScalar(1/L);   // unit vector toward the hole
+  for (let i=0;i<N;i++){
+    pp[i*3]=pos.x; pp[i*3+1]=pos.y; pp[i*3+2]=pos.z;
+    const jx=(Math.random()-0.5)*1.2, jy=(Math.random()-0.5)*1.2, jz=(Math.random()-0.5)*1.2;
+    vv.push(new THREE.Vector3(_bhTmp.x*(2.4+3*f)+jx, _bhTmp.y*(2.4+3*f)+jy, _bhTmp.z*(2.4+3*f)+jz));
+  }
+  geo.setAttribute('position', new THREE.BufferAttribute(pp,3));
+  const mat = new THREE.PointsMaterial({ color:0xffd8a8, size:2, sizeAttenuation:false, transparent:true,
+    opacity:0.95, blending:THREE.AdditiveBlending, depthWrite:false });
+  const pts = new THREE.Points(geo, mat); pts.renderOrder=5; scene.add(pts);
+  const cleanup = ()=>{ scene.remove(pts); geo.dispose(); mat.dispose(); };
+  bhBurstList.push({ life:0, dur:0.45, geo, mat, vv, N, cleanup });
 }
 
 /* ---------------------------------------------------------------------------
@@ -4291,7 +4411,7 @@ function onKey(e){
   else if (k==='e'){ transform.setMode('rotate'); }
   else if (k==='r'){ transform.setMode('scale'); }
   else if (k==='f'){ if (selected?.type==='imported') focusObject(selected.im.object3d); else if (selected?.type==='planet') focusKey(selected.key); }
-  else if (k==='delete'||k==='backspace'){ if (selected?.type==='imported') removeImported(selected.im); }
+  else if (k==='delete'||k==='backspace'){ if (selected?.type==='imported') removeImported(selected.im); else if (selected?.type==='bh') bhRemove(selected.bh); }
   else if (k===' '){ playing=!playing; playBtn.textContent=playing?'⏸':'▶'; e.preventDefault(); }
   else if (k==='c'){ setCamMode(camMode==='cinematic'?'explore':'cinematic'); }
   else if (k==='g'){ setPanMode(!panMode); }
