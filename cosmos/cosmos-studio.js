@@ -252,6 +252,8 @@ let bhBeltVel = null, bhBeltAlive = null, bhBeltBase = null;   // asteroid-belt 
 let _bhSaved = null;                           // pre-sim snapshot for a clean, reversible restore
 let bhCineOn = false, bhCinePlaying = false, bhCineT = 0, bhCineTarget = null, bhCineFocusOn = false;
 let bhBar = null;                              // #stBhBar cinematic control card
+let bhRec = null, bhRecComp = null;            // black-hole cinematic MP4 recorder + "scene + cards" compositor (same engine as Sun's End)
+let bhCineStar = null;                         // main-character Scene id the cinematic frames (null = the black hole itself)
 let _bhCineUiAccum = 0;
 const BH_CINE_DUR = 60;                        // seconds of wall-clock for one full black-hole cinematic
 const BH_GM_REF = 26;                          // scene gravitational parameter of the reference (1e6 M☉) hole → watchable free-fall
@@ -266,6 +268,9 @@ const _bhReduce = () => !!(window.matchMedia && window.matchMedia('(prefers-redu
 // Scratch vectors — reused every frame to avoid per-frame allocation (resilience).
 const _bhA = new THREE.Vector3(), _bhB = new THREE.Vector3(), _bhAcc = new THREE.Vector3(),
       _bhTan = new THREE.Vector3(), _bhTmp = new THREE.Vector3(), _bhUp = new THREE.Vector3(0,1,0);
+// Main-character cinematic scratch — reused every frame (no per-frame allocation).
+const _bhStarP = new THREE.Vector3(), _bhStarQ = new THREE.Vector3(), _bhNbP = new THREE.Vector3(), _bhMid = new THREE.Vector3();
+let _bhNbR = 1;
 // Selecting / dragging a black hole directly in the 3D scene.
 let bhDrag = null;                             // active drag session: { bh, moved, uiN }
 let bhSelRing = null;                          // reusable camera-facing selection halo
@@ -560,6 +565,28 @@ function injectCSS(){
   .st-nova.st-bh button:hover{background:rgba(150,130,255,.22);border-color:rgba(150,130,255,.6)}
   .st-nova.st-bh #stBhFocus.on{background:linear-gradient(180deg,#8a7cff,#4b3fb0);border-color:transparent;color:#fff;
     box-shadow:0 0 0 1px rgba(138,124,255,.5),0 6px 18px rgba(75,63,176,.35)}
+  .st-nova .nv-rec{background:linear-gradient(180deg,#ff5a6a,#c11f38)!important;border-color:transparent!important;color:#fff!important;
+    box-shadow:0 0 0 1px rgba(255,90,106,.5),0 6px 18px rgba(193,31,56,.4);animation:nvRecPulse 1.1s ease-in-out infinite}
+  @keyframes nvRecPulse{0%,100%{filter:brightness(1)}50%{filter:brightness(1.28)}}
+  /* Black-hole count card — Warp-Tempo-style floating pop-up (only while BH mode is active) */
+  .st-bhcount{position:absolute;left:14px;bottom:180px;z-index:9;display:none;align-items:center;gap:8px;
+    padding:7px 10px;border-radius:13px;border:1px solid rgba(150,130,255,.5);background:rgba(10,10,18,.94);
+    box-shadow:0 10px 30px rgba(0,0,0,.5);backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px);
+    font:600 13px/1 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:#e6dcff;user-select:none;touch-action:none}
+  .st-bhcount.on{display:flex}
+  .st-bhcount .bhc-grip{cursor:grab;color:#8a7cff;font-size:14px;padding:2px 1px;line-height:1;opacity:.85}
+  .st-bhcount .bhc-grip:active{cursor:grabbing}
+  .st-bhcount .bhc-ic{color:#b8a6ff;font-size:14px}
+  .st-bhcount .bhc-lab{color:#c9bdf0;font-weight:600;letter-spacing:.2px;opacity:.9}
+  .st-bhcount .bhc-n{min-width:1.4em;text-align:center;font-variant-numeric:tabular-nums;font-size:15px;font-weight:800;color:#fff}
+  .st-bhcount button{appearance:none;border:1px solid rgba(150,130,255,.45);background:rgba(150,130,255,.14);color:#efe9ff;
+    width:26px;height:26px;border-radius:8px;font-size:16px;font-weight:800;line-height:1;cursor:pointer;display:grid;place-items:center;
+    transition:background .12s,border-color .12s,transform .08s}
+  .st-bhcount button.bhc-reset{width:auto;padding:0 9px;font-size:12px;font-weight:700}
+  .st-bhcount button:hover:not(:disabled){background:rgba(150,130,255,.28);border-color:rgba(150,130,255,.7)}
+  .st-bhcount button:active:not(:disabled){transform:scale(.94)}
+  .st-bhcount button:disabled{opacity:.38;cursor:not-allowed}
+  .st-bhcount button:focus-visible{outline:2px solid #b8a6ff;outline-offset:2px}
   /* Configure-and-lock-in dialog — right side, above the Inspector */
   .st-bhform{position:absolute;right:12px;top:64px;z-index:13;width:min(300px,86vw);max-height:calc(100% - 150px);overflow-y:auto;
     display:flex;flex-direction:column;gap:9px;padding:13px 14px;border-radius:14px;
@@ -891,11 +918,25 @@ function buildDOM(){
           <button id="stBhReplay" title="Replay from the beginning">↺</button>
           <button id="stBhFocus" title="Focus lock — hold on your selected object and stop the auto camera" aria-pressed="false">◎ Focus</button>
           <button id="stBhAdd" title="Add another independent black hole">＋ Hole</button>
+          <button id="stBhExport" title="Export this black-hole cinematic as an MP4 video">⤓ MP4</button>
           <button id="stBhExit" title="Exit the cinematic — the black hole and its physics keep running">✕</button>
         </div>
       </div>
       <input type="range" class="nv-scrub" id="stBhScrub" min="0" max="1000" value="0" step="1" aria-label="Scrub the black-hole cinematic" />
       <div class="nv-note" id="stBhNote"></div>
+    </div>
+
+    <!-- Black-hole count card — a Warp-Tempo-style floating pop-up that only appears while
+         Black Hole mode is active. Lets you add / remove / reset holes without hunting for
+         the toolbar toggle (so you never accidentally switch the whole mode off). -->
+    <div class="st-bhcount" id="stBhCount" role="group" aria-label="Number of black holes" hidden>
+      <span class="bhc-grip" id="stBhCountGrip" title="Drag to move this card" aria-hidden="true">⠿</span>
+      <span class="bhc-ic" aria-hidden="true">◕</span>
+      <button id="stBhCountMinus" title="Remove the most recent black hole" aria-label="Remove a black hole">−</button>
+      <span class="bhc-n" id="stBhCountN" aria-live="polite" aria-atomic="true">0</span>
+      <span class="bhc-lab">Black&nbsp;Holes</span>
+      <button id="stBhCountPlus" title="Add and customize a black hole" aria-label="Add a black hole">＋</button>
+      <button id="stBhCountReset" class="bhc-reset" title="Remove every black hole (reset to zero)" aria-label="Reset to zero">Reset</button>
     </div>
 
     <div class="st-time" id="stTime">
@@ -995,8 +1036,15 @@ function buildDOM(){
   root.querySelector('#stBhReplay').addEventListener('click', bhCineReplay);
   root.querySelector('#stBhFocus').addEventListener('click', bhCineToggleFocus);
   root.querySelector('#stBhAdd').addEventListener('click', ()=>bhOpenForm());
+  root.querySelector('#stBhExport').addEventListener('click', bhExportMenu);
   root.querySelector('#stBhExit').addEventListener('click', ()=>bhCineExit());
   root.querySelector('#stBhScrub').addEventListener('input', e=>bhCineSeek((+e.target.value)/1000));
+  // Black-hole count card (+/− pop-up, Warp-Tempo style)
+  root.querySelector('#stBhCountPlus').addEventListener('click', bhCountPlus);
+  root.querySelector('#stBhCountMinus').addEventListener('click', bhCountMinus);
+  root.querySelector('#stBhCountReset').addEventListener('click', bhCountReset);
+  bhCountInitDrag();
+  bhCountRefresh();
   root.querySelector('#stAdd').addEventListener('click', addPrimitiveMenu);
   root.querySelector('#stImport').addEventListener('click', ()=>root.querySelector('#stFile').click());
   root.querySelector('#stFile').addEventListener('change', e=>{ handleFiles(e.target.files); e.target.value=''; });
@@ -1931,6 +1979,7 @@ function animate(){
     renderer.render(scene, camera);
     if (novaRecComp) novaRecComposite();        // grab the fresh frame for a "scene + cards" export
     if (ecRecComp) ecRecComposite();            // …and for an Event Cinema export
+    if (bhRecComp) bhRecComposite();            // …and for a Black-Hole cinematic export
 
     // local wall-clock readout (once per second)
     const nowSec = (performance.now()/1000)|0;
@@ -3683,6 +3732,8 @@ function bhSimStop(restore){
 
 /* ---- Black-hole cinematic — its own "Sun's End" ---- */
 function bhCineFocusTarget(out){
+  // A chosen "main character" always wins — Focus lock then holds on that object.
+  if (bhCineStar && cineCenterOf(bhCineStar, out) >= 0) return;
   if (bhCineFocusOn && selected){
     if (selected.type==='planet'){ const rec=planetMeshes[selected.key]; if(rec&&rec.group.visible){ out.copy(rec.group.position); return; } }
     else if (selected.type==='imported' && selected.im && selected.im.object3d.visible){ out.copy(selected.im.object3d.position); return; }
@@ -3696,6 +3747,7 @@ function bhCineTick(dt){
   if (bh && bh.group){
     bhCineFocusTarget(_bhA);
     if (bhCineFocusOn){ orbit.target.lerp(_bhA, 1-Math.pow(0.02,dt)); }
+    else if (bhCineStar && cineCenterOf(bhCineStar, _bhStarP) >= 0){ bhStarShot(dt); }   // a Scene object is the "main character" → timed POV shots
     else if (performance.now()-cineLastInput >= 3200){
       const f = _nvClamp(bhCineT/BH_CINE_DUR, 0, 1);
       const rs = bh.rs;
@@ -3716,7 +3768,78 @@ function bhCineTick(dt){
       orbit.target.lerp(bh.pos, 1-Math.pow(0.004,dt));
     }
   }
+  // A live MP4 export auto-saves the moment the cinematic completes (same as Sun's End).
+  if (bhRec && !bhRec.finishing && !bhCinePlaying && bhCineT>=BH_CINE_DUR){
+    bhRec.finishing = true;
+    setTimeout(()=>{ bhRecStop(true); }, 450);
+  }
   _bhCineUiAccum += dt; if (_bhCineUiAccum>0.1){ _bhCineUiAccum=0; bhCineUpdateUI(); }
+}
+// Main-character choreography: while the cinematic plays (or records), a chosen
+// Scene object becomes the subject and the camera cuts through a repeating set of
+// timed shots — hero close-up → subject + black-hole two-shot → a neighbouring
+// body cameo (supporting cast) → a wide of the black hole with the subject in the
+// field. Framing distances scale with each body's true size via cineCenterOf().
+function bhStarShot(dt){
+  const bh = bhCineTarget; if (!bh) return;
+  const sr = cineCenterOf(bhCineStar, _bhStarP);           // subject world-pos → _bhStarP, apparent radius → sr
+  if (sr < 0){ bhCineStar = null; return; }                // subject vanished (e.g. absorbed) → fall back to the hole
+  if (performance.now()-cineLastInput < 3200) return;      // the user is steering — don't fight them
+  const calm = _bhReduce()?0.5:1;
+  const beatLen = 3.4;
+  const beat = Math.floor(bhCineT/beatLen) % 4;
+  const ang = bhCineT*0.16*calm;
+  const camPos = _bhB, tgt = _bhStarQ;
+  if (beat === 0){                       // hero close-up of the subject
+    const d = sr*6 + 3;
+    camPos.set(_bhStarP.x+Math.cos(ang)*d, _bhStarP.y+d*0.35, _bhStarP.z+Math.sin(ang)*d);
+    tgt.copy(_bhStarP);
+  } else if (beat === 1){                 // two-shot: subject in the foreground, black hole beyond
+    _bhMid.copy(_bhStarP).add(bh.pos).multiplyScalar(0.5);
+    const span = _bhStarP.distanceTo(bh.pos);
+    _bhTan.copy(_bhStarP).sub(bh.pos).cross(_bhUp);
+    if (_bhTan.lengthSq() < 1e-6) _bhTan.set(1,0,0);
+    _bhTan.normalize();
+    const d = span*0.9 + sr*4 + bh.rs*3;
+    camPos.copy(_bhMid).addScaledVector(_bhTan, d).addScaledVector(_bhUp, d*0.3);
+    tgt.copy(_bhMid);
+  } else if (beat === 2){                 // supporting cast — the nearest neighbouring body
+    const nb = bhStarNeighbour();
+    if (nb >= 0){ const d = _bhNbR*6 + 4; camPos.set(_bhNbP.x+Math.cos(ang)*d, _bhNbP.y+d*0.4, _bhNbP.z+Math.sin(ang)*d); tgt.copy(_bhNbP); }
+    else { const d = sr*7 + 4; camPos.set(_bhStarP.x+Math.cos(ang)*d, _bhStarP.y+d*0.4, _bhStarP.z+Math.sin(ang)*d); tgt.copy(_bhStarP); }
+  } else {                                // a wide of the black hole, subject in the field
+    const d = bh.rs*11 + 16;
+    camPos.set(bh.pos.x+Math.cos(ang)*d, bh.pos.y+d*0.4, bh.pos.z+Math.sin(ang)*d);
+    tgt.copy(bh.pos);
+  }
+  camera.position.lerp(camPos, 1-Math.pow(0.0022,dt));
+  orbit.target.lerp(tgt, 1-Math.pow(0.006,dt));
+}
+// Nearest Scene body to the current subject (excluding the subject itself); its
+// world-pos lands in _bhNbP and apparent radius in _bhNbR. Returns radius or -1.
+function bhStarNeighbour(){
+  let best = -1, bestD = Infinity;
+  for (const id of cineFocusList()){
+    if (id === bhCineStar) continue;
+    const r = cineCenterOf(id, _bhA);
+    if (r < 0) continue;
+    const d = _bhA.distanceTo(_bhStarP);
+    if (d < bestD){ bestD = d; best = r; _bhNbP.copy(_bhA); _bhNbR = r; }
+  }
+  return best;
+}
+// Make a Scene object the cinematic's "main character". Passing the hole's own id
+// (or null) returns to the default black-hole-centred show.
+function bhCineSetStar(id){
+  if (id && bhCineTarget && id === bhCineTarget.id) id = null;
+  bhCineStar = id;
+  bhCineFocusOn = false;
+  cineLastInput = 0;
+  const b = root && root.querySelector('#stBhFocus');
+  if (b){ b.classList.remove('on'); b.setAttribute('aria-pressed','false'); }
+  bhCineUpdateUI();
+  toast(id ? ('Now starring ' + cineName(id) + ' — timed shots of it, its neighbours and ' + (bhCineTarget?bhCineTarget.name:'the black hole'))
+           : 'Back to the black hole as the main subject');
 }
 function bhCineUpdateUI(){
   if (!bhBar || !root || !bhCineTarget) return;
@@ -3727,8 +3850,9 @@ function bhCineUpdateUI(){
     : f<0.85 ? 'Accretion — matter spirals past the horizon'
     : 'Aftermath — a rearranged system';
   const remain = bhBodies.filter(b=>b.alive).length;
-  const titleEl = root.querySelector('#stBhTitle'); if (titleEl) titleEl.textContent = bh.name;
-  const timeEl = root.querySelector('#stBhPhase'); if (timeEl) timeEl.textContent = phase + ' · ' + remain + ' bodies remain';
+  const starName = bhCineStar ? cineName(bhCineStar) : null;
+  const titleEl = root.querySelector('#stBhTitle'); if (titleEl) titleEl.textContent = starName ? (starName + ' ✦ ' + bh.name) : bh.name;
+  const timeEl = root.querySelector('#stBhPhase'); if (timeEl) timeEl.textContent = (starName ? ('Starring ' + starName) : phase) + ' · ' + remain + ' bodies remain';
   const scrub = root.querySelector('#stBhScrub'); if (scrub){ scrub.value=String(Math.round(f*1000)); scrub.style.setProperty('--nvp',(f*100).toFixed(1)+'%'); }
   const play = root.querySelector('#stBhPlay'); if (play) play.textContent = bhCinePlaying?'⏸':'▶';
   const note = root.querySelector('#stBhNote');
@@ -3743,12 +3867,13 @@ function bhEnterCinema(bh){
   if (!bh) return;
   if (novaOn) novaExit();
   if (ecOn) ecExit();
-  bhCineTarget = bh; bhCineOn = true; bhCinePlaying = true; bhCineT = 0; bhCineFocusOn = false; cineLastInput = 0;
+  bhCineTarget = bh; bhCineOn = true; bhCinePlaying = true; bhCineT = 0; bhCineFocusOn = false; bhCineStar = null; cineLastInput = 0;
   if (camMode==='cinematic') setCamMode('explore');
   if (dnPinsVisible) dnTogglePins(false);
   bhSimStart();
   const fbtn = root && root.querySelector('#stBhFocus'); if (fbtn){ fbtn.classList.remove('on'); fbtn.setAttribute('aria-pressed','false'); }
   if (bhBar) bhBar.classList.add('on');
+  bhCountRefresh();
   // establishing shot
   const d = bh.rs*16 + 22;
   camera.position.set(bh.pos.x, bh.pos.y + d*0.5, bh.pos.z + d);
@@ -3758,8 +3883,10 @@ function bhEnterCinema(bh){
 }
 function bhCineExit(){
   if (!bhCineOn) return;
-  bhCineOn = false; bhCinePlaying = false; bhCineFocusOn = false;
+  if (bhRec) bhRecStop(true);           // a recording in progress is saved, not discarded
+  bhCineOn = false; bhCinePlaying = false; bhCineFocusOn = false; bhCineStar = null;
   if (bhBar) bhBar.classList.remove('on');
+  bhCountRefresh();
   toast('Exited the cinematic — the black hole and its physics keep running in the 3D view');
 }
 function bhCineTogglePlay(){ if(!bhCineOn) return; if(!bhCinePlaying && bhCineT>=BH_CINE_DUR) bhCineT=0; bhCinePlaying=!bhCinePlaying; cineLastInput=0; bhCineUpdateUI(); }
@@ -3771,6 +3898,196 @@ function bhCineToggleFocus(){
   const b = root && root.querySelector('#stBhFocus');
   if (b){ b.classList.toggle('on', bhCineFocusOn); b.setAttribute('aria-pressed', String(bhCineFocusOn)); }
   toast(bhCineFocusOn ? 'Focus lock on — holding on your selected object' : 'Focus lock off — the camera resumes its cinematic path');
+}
+
+/* ---- Black-hole cinematic — MP4 export (the exact same engine as Sun's End) ----
+   Records the black-hole cinematic to a downloadable video in two flavours:
+     • Scene only              — the bare 3D render (canvas capture stream).
+     • Scene + on-screen cards — the render composited with whatever HUD cards
+                                 are open. Recording starts from the current POV,
+   plays the full timeline once, and saves automatically when it finishes. MP4 is
+   preferred; WebM is the transparent fallback. Video-only (no audio) by design. */
+function bhExportMenu(){
+  if (bhRec){ bhRecStop(true); return; }        // clicking ● Stop finishes + saves
+  if (!bhCineOn || !root) return;
+  const host = root.querySelector('#stBhBar'); if (!host) return;
+  const existing = root.querySelector('#stBhExpMenu');
+  if (existing){ existing.remove(); return; }    // toggle the chooser off
+  const m = document.createElement('div');
+  m.id='stBhExpMenu'; m.className='nv-menu';
+  m.innerHTML =
+    `<button data-m="scene">\ud83c\udfac Scene only</button>`+
+    `<button data-m="cards">\ud83d\uddc2 Scene + on-screen cards</button>`;
+  host.appendChild(m);
+  m.addEventListener('click', e=>{
+    const b=e.target.closest('button'); if(!b) return;
+    const mode=b.getAttribute('data-m'); m.remove(); bhRecStart(mode);
+  });
+  setTimeout(()=>{
+    const off=(ev)=>{
+      if (!m.contains(ev.target) && ev.target.id!=='stBhExport'){
+        m.remove(); document.removeEventListener('pointerdown', off, true);
+      }
+    };
+    document.addEventListener('pointerdown', off, true);
+  }, 0);
+}
+function bhRecStart(mode){
+  if (bhRec || !bhCineOn || !renderer) return;
+  const mime = novaPickVideoMime();
+  if (mime===null){ toast('Video export is not supported in this browser'); return; }
+  const gl = renderer.domElement;
+  const srcW = gl.width || gl.clientWidth, srcH = gl.height || gl.clientHeight;
+  if (!srcW || !srcH){ toast('Nothing to record yet — try again in a moment'); return; }
+  const capW = Math.min(1920, srcW), capH = Math.max(2, Math.round(capW * srcH/srcW));
+
+  let stream;
+  if (mode==='cards'){
+    const cap = document.createElement('canvas'); cap.width=capW; cap.height=capH;
+    const cctx = cap.getContext('2d', { alpha:false });
+    cctx.fillStyle='#05060d'; cctx.fillRect(0,0,capW,capH);
+    bhRecComp = { canvas:cap, ctx:cctx, capW, capH, overlay:null, building:false, lastBuild:0 };
+    stream = cap.captureStream(30);
+  } else {
+    try{ stream = gl.captureStream(30); }
+    catch(_){ toast('This browser blocked canvas capture — cannot export'); return; }
+  }
+
+  const chunks = [];
+  let rec;
+  try{
+    rec = mime ? new MediaRecorder(stream, { mimeType:mime, videoBitsPerSecond:8_000_000 })
+               : new MediaRecorder(stream);
+  }catch(_){
+    try{ rec = new MediaRecorder(stream); }
+    catch(e2){ toast('Could not start the video recorder'); bhRecComp=null; return; }
+  }
+  const ext = ((rec.mimeType||mime||'').indexOf('mp4')>=0) ? 'mp4' : 'webm';
+
+  rec.ondataavailable = e=>{ if (e.data && e.data.size) chunks.push(e.data); };
+  rec.onstop = ()=>{
+    const save = !!(bhRec && bhRec.save);
+    bhRecComp = null; bhRec = null;
+    _bhRecRestoreUI();
+    if (!save){ toast('Export cancelled'); return; }
+    if (!chunks.length){ toast('Recording produced no data'); return; }
+    const blob = new Blob(chunks, { type: chunks[0].type || mime || 'video/mp4' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const ts = new Date().toISOString().replace(/[-:]/g,'').replace('T','-').slice(0,15);
+    a.href=url; a.download=`EWI-Cosmos-Black-Hole-${mode==='cards'?'with-cards':'scene'}-${ts}.${ext}`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>{ try{ URL.revokeObjectURL(url); }catch(_){} }, 5000);
+    toast(ext==='mp4'
+      ? 'Saved your black-hole cinematic (MP4)'
+      : 'Saved your black-hole cinematic (WebM \u2014 this browser can\u2019t record MP4)');
+  };
+  rec.onerror = ()=>{ bhRecComp=null; bhRec=null; _bhRecRestoreUI(); toast('Recording error \u2014 export stopped'); };
+
+  bhRec = { rec, mode, save:false, finishing:false };
+  // Begin from the user's current POV and play the whole cinematic once.
+  bhCineT=0; bhCinePlaying=true; cineLastInput = performance.now(); bhCineUpdateUI();
+  _bhRecSetUI(true);
+  try{ rec.start(100); }catch(_){ try{ rec.start(); }catch(e3){ bhRecComp=null; bhRec=null; _bhRecRestoreUI(); toast('Could not start the video recorder'); return; } }
+  toast(mode==='cards'
+    ? 'Recording the black-hole cinematic with your on-screen cards \u2014 it saves automatically when it ends'
+    : 'Recording the black-hole cinematic \u2014 it saves automatically when it ends');
+}
+function bhRecStop(save){
+  if (!bhRec) return;
+  bhRec.save = !!save;
+  try{ bhRec.rec.stop(); }
+  catch(_){ bhRecComp=null; bhRec=null; _bhRecRestoreUI(); }
+}
+function _bhRecSetUI(on){
+  if (!root) return;
+  const b = root.querySelector('#stBhExport');
+  if (b){
+    b.classList.toggle('nv-rec', on);
+    b.textContent = on ? '\u25cf Stop' : '\u2913 MP4';
+    b.title = on ? 'Stop and save the recording now' : 'Export this black-hole cinematic as an MP4 video';
+  }
+  ['#stBhScrub','#stBhPlay','#stBhReplay'].forEach(sel=>{
+    const el = root.querySelector(sel); if (el) el.disabled = on;
+  });
+}
+function _bhRecRestoreUI(){ _bhRecSetUI(false); }
+// Per-frame composite for the "scene + cards" export — reuses the exact overlay
+// rasteriser Sun's End uses, so the two exports are pixel-for-pixel the same engine.
+function bhRecComposite(){
+  const c = bhRecComp; if (!c) return;
+  try{
+    c.ctx.drawImage(renderer.domElement, 0,0, c.capW, c.capH);
+    if (c.overlay) c.ctx.drawImage(c.overlay, 0,0, c.capW, c.capH);
+    const now = performance.now();
+    if (!c.building && now-c.lastBuild>280){ c.lastBuild=now; novaRecBuildOverlay(c); }
+  }catch(_){}
+}
+
+/* ---- Black-hole count card — a Warp-Tempo-style +/− pop-up ----
+   Appears only while Black Hole mode is active. Lets you add, remove, or reset
+   the number of black holes without hunting for the toolbar toggle — so you can
+   never accidentally switch the whole mode off while you only meant to add or
+   remove a hole. Draggable, and it remembers where you left it. */
+function bhModeActive(){ return blackHoles.length>0 || !!bhDraft || bhCineOn; }
+function bhCountRefresh(){
+  const card = root && root.querySelector('#stBhCount');
+  if (!card) return;
+  const active = bhModeActive();
+  card.hidden = !active;
+  card.classList.toggle('on', active);
+  const n = blackHoles.length + (bhDraft?1:0);
+  const nEl = card.querySelector('#stBhCountN'); if (nEl) nEl.textContent = String(n);
+  const minus = card.querySelector('#stBhCountMinus'); if (minus) minus.disabled = (blackHoles.length===0 && !bhDraft);
+  const reset = card.querySelector('#stBhCountReset'); if (reset) reset.disabled = (blackHoles.length===0 && !bhDraft);
+}
+function bhCountPlus(){
+  if (root && root.querySelector('#stBhForm')) return;   // a configure card is already open — finish that hole first
+  bhOpenForm();                                          // opens the configure-and-lock-in flow for a new hole
+  bhCountRefresh();
+}
+function bhCountMinus(){
+  if (bhDraft){ bhCancelForm(); bhCountRefresh(); return; }   // cancel the in-progress (not-yet-added) hole
+  if (!blackHoles.length) return;
+  bhRemove(blackHoles[blackHoles.length-1]);                  // remove the most recently added hole
+  bhCountRefresh();
+}
+function bhCountReset(){
+  if (bhDraft) bhCancelForm();
+  const had = blackHoles.length;
+  for (let i=blackHoles.length-1; i>=0; i--) bhRemove(blackHoles[i]);
+  bhCountRefresh();
+  if (had) toast(had===1 ? 'Removed the black hole' : ('Removed all ' + had + ' black holes'));
+}
+// Drag-to-move (grip only), position persisted — like the Warp Tempo card.
+function bhCountInitDrag(){
+  const card = root && root.querySelector('#stBhCount'); if (!card) return;
+  const grip = card.querySelector('#stBhCountGrip'); if (!grip) return;
+  try{
+    const st = JSON.parse(localStorage.getItem('ewiCosmosBhCountPos')||'null');
+    if (st && st.left){ card.style.left=st.left; card.style.top=st.top; card.style.right='auto'; card.style.bottom='auto'; }
+  }catch(_){}
+  let dragging=false, ox=0, oy=0;
+  const onMove=(e)=>{
+    if (!dragging) return;
+    const x = Math.max(6, Math.min(window.innerWidth  - card.offsetWidth  - 6, e.clientX - ox));
+    const y = Math.max(6, Math.min(window.innerHeight - card.offsetHeight - 6, e.clientY - oy));
+    card.style.left=x+'px'; card.style.top=y+'px'; card.style.right='auto'; card.style.bottom='auto';
+  };
+  const onUp=()=>{
+    dragging=false;
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', onUp);
+    try{ localStorage.setItem('ewiCosmosBhCountPos', JSON.stringify({ left:card.style.left, top:card.style.top })); }catch(_){}
+  };
+  grip.addEventListener('pointerdown', (e)=>{
+    dragging=true;
+    const r=card.getBoundingClientRect();
+    ox=e.clientX-r.left; oy=e.clientY-r.top;
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+    e.preventDefault();
+  });
 }
 
 /* ---- Create → configure → lock-in flow ---- */
@@ -3797,6 +4114,7 @@ function bhOpenForm(){
   if (camMode==='cinematic') setCamMode('explore');
   camera.position.set(p.x, p.y + d*0.5, p.z + d);
   orbit.target.copy(p);
+  bhCountRefresh();
   toast('Configure your black hole — set its mass, size, position, spin, tilt and POV, then Lock in & begin');
 }
 function bhFormBuild(){
@@ -3871,6 +4189,7 @@ function bhLockIn(){
 function bhCancelForm(){
   const card = root.querySelector('#stBhForm'); if (card) card.remove();
   if (bhDraft){ bhDispose(bhDraft); bhDraft=null; }
+  bhCountRefresh();
   toast('Cancelled');
 }
 function bhRemove(bh){
@@ -3881,6 +4200,7 @@ function bhRemove(bh){
   if (selected && selected.type==='bh' && selected.bh===bh){ selected=null; if(inspectorEl) inspectorEl.innerHTML='<div class="st-note">Select a body or imported object to inspect and transform it.</div>'; }
   if (!blackHoles.length) bhSimStop(true);   // last hole gone → restore the Solar System
   refreshObjList();
+  bhCountRefresh();
   toast('Removed '+bh.name+(blackHoles.length?'':' — Solar System restored'));
 }
 function selectBlackHole(bh){
@@ -4281,6 +4601,9 @@ function refreshObjList(){
     el.addEventListener('click', ev=>{
       if (ev.target.classList.contains('x')) return;
       const id = el.dataset.id;
+      // While a black-hole cinematic is playing or recording, clicking any Scene
+      // object makes it the "main character" of the shot instead of re-framing.
+      if (bhCineOn){ bhCineSetStar(id); return; }
       const bh = blackHoles.find(x=>x.id===id);
       const im = imported.find(x=>x.id===id);
       if (bh){ if (selected && selected.type==='bh' && selected.bh===bh){ bhDeselect(); return; } cineHold(); focusBlackHole(bh); selectBlackHole(bh); return; }
